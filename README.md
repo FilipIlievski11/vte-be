@@ -31,6 +31,8 @@ Change the password from the Account Settings panel as soon as you're in.
 
 If `dotnet run` fails because the DB can't be created or migrated, see [`db/README.md`](db/README.md) for the by-hand SQL path.
 
+**Want the real production data on this machine?** Auto-seed gives you an empty-but-functional app. To restore real clients/vehicles/requests/bills, see [`db/SEED-PRODUCTION-DATA.md`](db/SEED-PRODUCTION-DATA.md) — fastest path is restoring a `.bak` from OneDrive.
+
 ## Prerequisites
 
 | Tool                          | Version           | Install                                           |

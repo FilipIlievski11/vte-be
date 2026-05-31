@@ -2,7 +2,7 @@
 
 This folder gives you a working `VTE` database on a clean Windows + SQL Server LocalDB install, **without** needing the legacy `VTEZVV` database. You won't have the real production data, but you will have a fully functional app with seed data: one company, one station, one Administrator, and the request-catalog tree.
 
-If you need the real legacy data too, see [`../migrate/README.md`](../migrate/README.md).
+**If you want real production data** (clients, vehicles, requests, bills migrated from legacy), see [`SEED-PRODUCTION-DATA.md`](SEED-PRODUCTION-DATA.md) — the fastest path is restoring a `.bak` from OneDrive. The full re-migration path is in [`../migrate/README.md`](../migrate/README.md).
 
 ## Two ways to set up
 
