@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem*)",
+      "PowerShell(Get-Content*)",
+      "PowerShell(Get-NetTCPConnection*)",
+      "PowerShell(Get-Command*)",
+      "PowerShell(Get-Process*)",
+      "PowerShell(Get-Item*)",
+      "PowerShell(Test-Path*)",
+      "PowerShell(Test-NetConnection*)",
+      "PowerShell(Resolve-Path*)",
+      "PowerShell(whoami)",
+      "PowerShell(sqllocaldb info*)",
+
+      "Bash(until grep *)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --info)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet --list-runtimes)",
+      "Bash(dotnet tool list*)",
+      "Bash(npx vue-tsc --noEmit*)",
+      "Bash(npm --version)"
+    ]
+  }
+}

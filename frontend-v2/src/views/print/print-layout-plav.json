@@ -1,0 +1,885 @@
+{
+  "page": {
+    "w": 2101,
+    "h": 2969
+  },
+  "total": 86,
+  "counts": {
+    "labels": 65,
+    "checkboxes": 21,
+    "panels": 0,
+    "lines": 0,
+    "other": 0
+  },
+  "controls": [
+    {
+      "name": "CheckBoxPrvPat",
+      "checked": true,
+      "x": 307,
+      "y": 688,
+      "declaredName": "CheckBoxPrvPat",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxPovtorno",
+      "checked": true,
+      "x": 307,
+      "y": 730,
+      "declaredName": "CheckBoxPovtorno",
+      "w": 42,
+      "h": 64,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxPrivremeno",
+      "checked": true,
+      "x": 307,
+      "y": 794,
+      "declaredName": "CheckBoxPrivremeno",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "XrLabel1",
+      "x": 847,
+      "y": 847,
+      "declaredName": "XrLabel1",
+      "w": 1101,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "CheckBoxVehicleCategory1",
+      "checked": true,
+      "x": 646,
+      "y": 1005,
+      "declaredName": "CheckBoxVehicleCategory1",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory5",
+      "checked": true,
+      "x": 1323,
+      "y": 1005,
+      "declaredName": "CheckBoxVehicleCategory5",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory2",
+      "checked": true,
+      "x": 646,
+      "y": 1048,
+      "declaredName": "CheckBoxVehicleCategory2",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory6",
+      "checked": true,
+      "x": 1323,
+      "y": 1048,
+      "declaredName": "CheckBoxVehicleCategory6",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory3",
+      "checked": true,
+      "x": 646,
+      "y": 1090,
+      "declaredName": "CheckBoxVehicleCategory3",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory7",
+      "checked": true,
+      "x": 1323,
+      "y": 1090,
+      "declaredName": "CheckBoxVehicleCategory7",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory4",
+      "checked": true,
+      "x": 646,
+      "y": 1132,
+      "declaredName": "CheckBoxVehicleCategory4",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxVehicleCategory8",
+      "checked": true,
+      "x": 1323,
+      "y": 1132,
+      "declaredName": "CheckBoxVehicleCategory8",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegBr",
+      "x": 1037,
+      "y": 1429,
+      "declaredName": "lblPrethodnaRegBr",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegBr",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegOrgan",
+      "x": 1037,
+      "y": 1513,
+      "declaredName": "lblPrethodnaRegOrgan",
+      "w": 910,
+      "h": 64,
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegDtum",
+      "x": 1037,
+      "y": 1598,
+      "declaredName": "lblPrethodnaRegDtum",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegDtum",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegSurName",
+      "x": 1037,
+      "y": 1693,
+      "declaredName": "lblPrethodnaRegSurName",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegSurName",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegFirstName",
+      "x": 1037,
+      "y": 1778,
+      "declaredName": "lblPrethodnaRegFirstName",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegFirstName",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegAddress",
+      "x": 1037,
+      "y": 1863,
+      "declaredName": "lblPrethodnaRegAddress",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegAddress",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblPrethodnaRegMB",
+      "x": 1037,
+      "y": 1947,
+      "declaredName": "lblPrethodnaRegMB",
+      "w": 910,
+      "h": 64,
+      "text": "lblPrethodnaRegMB",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "XrLabel6",
+      "x": 995,
+      "y": 2138,
+      "declaredName": "XrLabel6",
+      "w": 952,
+      "h": 64,
+      "text": "XrLabel6",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel7",
+      "x": 995,
+      "y": 2222,
+      "declaredName": "XrLabel7",
+      "w": 952,
+      "h": 64,
+      "text": "XrLabel7",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel17",
+      "x": 169,
+      "y": 2519,
+      "declaredName": "XrLabel17",
+      "w": 974,
+      "h": 42,
+      "text": "XrLabel17",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblIsReady",
+      "x": 1080,
+      "y": 2551,
+      "declaredName": "lblIsReady",
+      "w": 64,
+      "h": 64,
+      "text": "__",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblIsNotReady",
+      "x": 1143,
+      "y": 2551,
+      "declaredName": "lblIsNotReady",
+      "w": 106,
+      "h": 64,
+      "text": "____",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "XrLabel26",
+      "x": 635,
+      "y": 2572,
+      "declaredName": "XrLabel26",
+      "w": 339,
+      "h": 42,
+      "text": "XrLabel26",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel11",
+      "x": 995,
+      "y": 3238,
+      "declaredName": "XrLabel11",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel11",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel12",
+      "x": 995,
+      "y": 3323,
+      "declaredName": "XrLabel12",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel12",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel13",
+      "x": 995,
+      "y": 3408,
+      "declaredName": "XrLabel13",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel13",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblVehicleMadeCountry",
+      "x": 995,
+      "y": 3492,
+      "declaredName": "lblVehicleMadeCountry",
+      "w": 931,
+      "h": 64,
+      "text": "lblVehicleMadeCountry",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel15",
+      "x": 995,
+      "y": 3577,
+      "declaredName": "XrLabel15",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel15",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblEngineType",
+      "x": 995,
+      "y": 3672,
+      "declaredName": "lblEngineType",
+      "w": 444,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel18",
+      "x": 1439,
+      "y": 3672,
+      "declaredName": "XrLabel18",
+      "w": 466,
+      "h": 64,
+      "text": "XrLabel18",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblBodyType",
+      "x": 995,
+      "y": 3757,
+      "declaredName": "lblBodyType",
+      "w": 931,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblVehicleuse",
+      "x": 995,
+      "y": 3842,
+      "declaredName": "lblVehicleuse",
+      "w": 931,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblFirstColor",
+      "x": 1143,
+      "y": 3905,
+      "declaredName": "lblFirstColor",
+      "w": 423,
+      "h": 85,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblFirstColorCode",
+      "x": 1704,
+      "y": 3905,
+      "declaredName": "lblFirstColorCode",
+      "w": 254,
+      "h": 85,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblSecondColor",
+      "x": 1143,
+      "y": 3990,
+      "declaredName": "lblSecondColor",
+      "w": 423,
+      "h": 85,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblScondColorCode",
+      "x": 1704,
+      "y": 3990,
+      "declaredName": "lblScondColorCode",
+      "w": 254,
+      "h": 85,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel29",
+      "x": 1005,
+      "y": 4106,
+      "declaredName": "XrLabel29",
+      "w": 169,
+      "h": 64,
+      "text": "XrLabel29",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel2",
+      "x": 1482,
+      "y": 4106,
+      "declaredName": "XrLabel2",
+      "w": 212,
+      "h": 64,
+      "text": "XrLabel2",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel28",
+      "x": 995,
+      "y": 4191,
+      "declaredName": "XrLabel28",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel28",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel27",
+      "x": 995,
+      "y": 4276,
+      "declaredName": "XrLabel27",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel27",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "lblAllowedCarringWaight",
+      "x": 995,
+      "y": 4360,
+      "declaredName": "lblAllowedCarringWaight",
+      "w": 931,
+      "h": 64,
+      "text": "lblAllowedCarringWaight",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel31",
+      "x": 995,
+      "y": 4445,
+      "declaredName": "XrLabel31",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel31",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel30",
+      "x": 995,
+      "y": 4530,
+      "declaredName": "XrLabel30",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel30",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel36",
+      "x": 995,
+      "y": 4625,
+      "declaredName": "XrLabel36",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel36",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel35",
+      "x": 995,
+      "y": 4710,
+      "declaredName": "XrLabel35",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel35",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "CheckBoxPowerSource1",
+      "checked": true,
+      "x": 1005,
+      "y": 4784,
+      "declaredName": "CheckBoxPowerSource1",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxPowerSource2",
+      "checked": true,
+      "x": 1302,
+      "y": 4784,
+      "declaredName": "CheckBoxPowerSource2",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxPowerSource3",
+      "checked": true,
+      "x": 1640,
+      "y": 4784,
+      "declaredName": "CheckBoxPowerSource3",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxPowerSource4",
+      "checked": true,
+      "x": 1005,
+      "y": 4868,
+      "declaredName": "CheckBoxPowerSource4",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxPowerSource5",
+      "checked": true,
+      "x": 1302,
+      "y": 4868,
+      "declaredName": "CheckBoxPowerSource5",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxPowerSource6",
+      "checked": true,
+      "x": 1640,
+      "y": 4868,
+      "declaredName": "CheckBoxPowerSource6",
+      "w": 42,
+      "h": 64
+    },
+    {
+      "name": "CheckBoxHookYes",
+      "checked": true,
+      "x": 1005,
+      "y": 4953,
+      "declaredName": "CheckBoxHookYes",
+      "w": 42,
+      "h": 42
+    },
+    {
+      "name": "CheckBoxHookNo",
+      "checked": true,
+      "x": 1640,
+      "y": 4953,
+      "declaredName": "CheckBoxHookNo",
+      "w": 42,
+      "h": 42
+    },
+    {
+      "name": "XrLabel34",
+      "x": 995,
+      "y": 5059,
+      "declaredName": "XrLabel34",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel34",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel33",
+      "x": 995,
+      "y": 5144,
+      "declaredName": "XrLabel33",
+      "w": 931,
+      "h": 64,
+      "text": "XrLabel33",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel32",
+      "x": 995,
+      "y": 5228,
+      "declaredName": "XrLabel32",
+      "w": 931,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel25",
+      "x": 995,
+      "y": 5313,
+      "declaredName": "XrLabel25",
+      "w": 931,
+      "h": 64,
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel3",
+      "x": 995,
+      "y": 5567,
+      "declaredName": "XrLabel3",
+      "w": 868,
+      "h": 64,
+      "text": "XrLabel3",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel4",
+      "x": 995,
+      "y": 5652,
+      "declaredName": "XrLabel4",
+      "w": 868,
+      "h": 64,
+      "text": "XrLabel4",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "XrLabel5",
+      "x": 995,
+      "y": 5736,
+      "declaredName": "XrLabel5",
+      "w": 868,
+      "h": 64,
+      "text": "XrLabel5",
+      "align": "MiddleLeft"
+    },
+    {
+      "name": "CheckBoxIsNotCompany",
+      "checked": true,
+      "x": 1037,
+      "y": 6191,
+      "declaredName": "CheckBoxIsNotCompany",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "CheckBoxIsCompany",
+      "checked": true,
+      "x": 1556,
+      "y": 6202,
+      "declaredName": "CheckBoxIsCompany",
+      "w": 42,
+      "h": 42,
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanySurname",
+      "x": 1037,
+      "y": 6456,
+      "declaredName": "lblNotCompanySurname",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanySurname",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyFirstName",
+      "x": 1037,
+      "y": 6540,
+      "declaredName": "lblNotCompanyFirstName",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyFirstName",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyMB",
+      "x": 1037,
+      "y": 6636,
+      "declaredName": "lblNotCompanyMB",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyMB",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyDateOfBirth",
+      "x": 1037,
+      "y": 6731,
+      "declaredName": "lblNotCompanyDateOfBirth",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyDateOfBirth",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyCity",
+      "x": 1037,
+      "y": 6816,
+      "declaredName": "lblNotCompanyCity",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyCity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyCommunity",
+      "x": 1037,
+      "y": 6900,
+      "declaredName": "lblNotCompanyCommunity",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyCommunity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyCountry",
+      "x": 1037,
+      "y": 6985,
+      "declaredName": "lblNotCompanyCountry",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyCountry",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyCitizenship",
+      "x": 1037,
+      "y": 7070,
+      "declaredName": "lblNotCompanyCitizenship",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyCitizenship",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyOccupation",
+      "x": 1037,
+      "y": 7154,
+      "declaredName": "lblNotCompanyOccupation",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyOccupation",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyWorksIn",
+      "x": 1037,
+      "y": 7239,
+      "declaredName": "lblNotCompanyWorksIn",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyWorksIn",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "XrLabel55",
+      "x": 1037,
+      "y": 7324,
+      "declaredName": "XrLabel55",
+      "w": 508,
+      "h": 64,
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "XrLabel47",
+      "x": 1545,
+      "y": 7324,
+      "declaredName": "XrLabel47",
+      "w": 402,
+      "h": 64,
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyLivingCity",
+      "x": 1037,
+      "y": 7408,
+      "declaredName": "lblNotCompanyLivingCity",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyLivingCity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyLivingCommunity",
+      "x": 1037,
+      "y": 7493,
+      "declaredName": "lblNotCompanyLivingCommunity",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyLivingCommunity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyLivingCountry",
+      "x": 1037,
+      "y": 7578,
+      "declaredName": "lblNotCompanyLivingCountry",
+      "w": 910,
+      "h": 64,
+      "text": "lblNotCompanyLivingCountry",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblNotCompanyLivingAddress",
+      "x": 1037,
+      "y": 7684,
+      "declaredName": "lblNotCompanyLivingAddress",
+      "w": 910,
+      "h": 127,
+      "text": "lblNotCompanyLivingAddress",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyName",
+      "x": 1016,
+      "y": 8139,
+      "declaredName": "lblCompanyName",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyName",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyBusinessType",
+      "x": 1016,
+      "y": 8234,
+      "declaredName": "lblCompanyBusinessType",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyBusinessType",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyCity",
+      "x": 1016,
+      "y": 8318,
+      "declaredName": "lblCompanyCity",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyCity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyCommunity",
+      "x": 1016,
+      "y": 8403,
+      "declaredName": "lblCompanyCommunity",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyCommunity",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyCountry",
+      "x": 1016,
+      "y": 8488,
+      "declaredName": "lblCompanyCountry",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyCountry",
+      "align": "MiddleLeft",
+      "visible": false
+    },
+    {
+      "name": "lblCompanyAddress",
+      "x": 1016,
+      "y": 8572,
+      "declaredName": "lblCompanyAddress",
+      "w": 910,
+      "h": 64,
+      "text": "lblCompanyAddress",
+      "align": "MiddleLeft",
+      "visible": false
+    }
+  ]
+}
