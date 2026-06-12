@@ -134,7 +134,7 @@ For legacy references when you need ground truth:
 - Secrets: `deploy/prod.secrets.local` on Filip's laptop (gitignored) — SA password, JWT secret, admin password; mirrored in `/opt/vte/.env` on the server
 - SSH: `ssh -i ~/.ssh/vte_deploy root@116.202.8.155`
 - **Redeploy** = `.\deploy\build-release.ps1` → scp `release.zip` to `/opt/vte/app/` → unzip to `publish/` → `docker compose up -d --build api`
-- Production DB starts EMPTY (seeded admin only); real-data lift is a future step
+- Production DB carries the REAL data since 2026-06-13 (lifted via .bak restore from Filip's laptop: ~32k clients / 66k vehicles / 128k requests / 100k tech-exams). Re-lift = backup local VTE → gzip → scp → `docker cp` into mssql container → `RESTORE DATABASE ... WITH REPLACE` (stop api container first). Admin password on prod = the strong one in `deploy/prod.secrets.local`, NOT the local dev default.
 - `LegacySync` is disabled in prod (`LegacySync__Enabled=false` in `.env`)
 
 ## How to run
