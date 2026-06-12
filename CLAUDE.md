@@ -58,7 +58,7 @@ AND (IdCompany = @IdCompany OR IdCompany = 0)
 | 3 | **`Trigger` is reserved**: bracket it — `[Trigger]` — in any column reference. |
 | 4 | **Legacy column names**: `NumberOfSeats`, `MaximunAllowedWaight` (typo preserved), `EnginePowerOutPut`, etc. don't match v2 `Vehicle` properties. There's a translation map in `migrate/backfill-pricecatalog-rules.sql`. |
 | 5 | **EMBG corruption**: some legacy `GartEMB` rows store school names (e.g. "ССОУ К.НЕДЕЛК..."). Import uses `LEFT(GartEMB, 13)`. |
-| 6 | **`PriceCompanyId` is schema drift**: added via raw SQL, NOT an EF migration. Captured at the bottom of `db/schema.sql` + `migrate/add-pricecatalog-company-and-backfill.sql`. Fold into a real EF migration when convenient. |
+| 6 | **Migrations were squashed 2026-06-12** into a single `InitialSchema` (now in `VTE.Infrastructure/Migrations/`, EF's default folder — the old `Persistence/Migrations/` chain is gone). Reason: the old chain could never build a fresh DB (duplicated Identity tables + ten `ExcludeFromMigrations()` entities like `Company` whose CreateTable existed nowhere). EF now owns the FULL schema; `ExcludeFromMigrations` was removed everywhere. Filip's laptop DB had its `__EFMigrationsHistory` realigned to the single squash row. NEVER restore the old migration files from git history. |
 | 7 | **Active cascade**: a rule is only firing-eligible if **all three** legacy levels have `Active=true`. Cascading down found 815 stale rules. See `migrate/fix-pricecatalog-active-cascade.sql`. |
 | 8 | **Sentinel multiplier rule**: when `ParametarFrom = 0 AND ParametarTo = 0 AND VehicleField != "Null"`, the price is `Price * vehicle.<VehicleField>`. (Currently NOT implemented in `PricingEvaluator.cs` — deferred.) |
 | 9 | **"Оперативни трошоци" is `TrigerdByRequest`** in legacy — not `TrigerdByTechnicalExam`. Caught this when user asked "are you sure this is right, too many same OT". |
@@ -126,6 +126,16 @@ For legacy references when you need ground truth:
 - VTE database ~785 MB total (~648 MB data + ~136 MB log after shrink)
 - ~228k bills, ~1.15M lines, ~254k installments, ~7k clients, ~6.9k vehicles, ~18k requests in the migrated production set
 - A full migration from legacy snapshot takes ~150 s
+
+## Production server (live since 2026-06-12)
+
+- **URL**: https://116.202.8.155.sslip.io — Hetzner CPX22 (Falkenstein), Ubuntu 24.04
+- Stack at `/opt/vte` on the server: Docker Compose — `mssql` (SQL Server 2025 Express, 1.5 GB cap), `api` (.NET 10 + SPA in wwwroot), `caddy` (auto-HTTPS via sslip.io)
+- Secrets: `deploy/prod.secrets.local` on Filip's laptop (gitignored) — SA password, JWT secret, admin password; mirrored in `/opt/vte/.env` on the server
+- SSH: `ssh -i ~/.ssh/vte_deploy root@116.202.8.155`
+- **Redeploy** = `.\deploy\build-release.ps1` → scp `release.zip` to `/opt/vte/app/` → unzip to `publish/` → `docker compose up -d --build api`
+- Production DB starts EMPTY (seeded admin only); real-data lift is a future step
+- `LegacySync` is disabled in prod (`LegacySync__Enabled=false` in `.env`)
 
 ## How to run
 

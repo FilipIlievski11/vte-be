@@ -91,21 +91,20 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         b.Entity<ApplicationUser>(e =>
         {
             e.Property(u => u.FullName).HasMaxLength(200);
-            // CompanyId is just a discriminator column on AspNetUsers — we deliberately
-            // do NOT emit a FK constraint to Company because the Company table is
-            // ExcludeFromMigrations (the project does not own its schema). The application
-            // enforces tenant scoping via JWT claim + EF query filter, not via a DB FK.
+            // CompanyId is just a discriminator column on AspNetUsers — no FK constraint
+            // to Company; tenant scoping is enforced via JWT claim + EF query filter.
         });
 
         // ------------------------------------------------------------------
-        // Existing business tables — EXCLUDED from migrations because they
-        // were created by hand against the live VTE database. EF still
-        // queries/updates them via the mappings below.
+        // Core business tables. Historically these were created by hand-run
+        // bootstrap SQL and marked ExcludeFromMigrations; since the 2026-06
+        // squash (InitialSchema) EF owns the full schema so fresh databases
+        // can be built from migrations alone.
         // ------------------------------------------------------------------
 
         b.Entity<Company>(e =>
         {
-            e.ToTable("Company", t => t.ExcludeFromMigrations());
+            e.ToTable("Company");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("tinyint").ValueGeneratedOnAdd();
             e.Property(x => x.Name).HasMaxLength(255).IsRequired();
@@ -113,7 +112,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<Station>(e =>
         {
-            e.ToTable("Station", t => t.ExcludeFromMigrations());
+            e.ToTable("Station");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("smallint").ValueGeneratedOnAdd();
             e.Property(x => x.CompanyId).HasColumnType("tinyint");
@@ -125,7 +124,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<Country>(e =>
         {
-            e.ToTable("Country", t => t.ExcludeFromMigrations());
+            e.ToTable("Country");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("smallint").ValueGeneratedOnAdd();
             e.Property(x => x.Name).HasMaxLength(150);
@@ -134,7 +133,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<Community>(e =>
         {
-            e.ToTable("Community", t => t.ExcludeFromMigrations());
+            e.ToTable("Community");
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).HasMaxLength(150).IsRequired();
             e.Property(x => x.CountryId).HasColumnType("smallint");
@@ -145,7 +144,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<City>(e =>
         {
-            e.ToTable("City", t => t.ExcludeFromMigrations());
+            e.ToTable("City");
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).HasMaxLength(150).IsRequired();
             e.Property(x => x.PostalCode).HasMaxLength(20).IsRequired();
@@ -154,7 +153,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<Citizenship>(e =>
         {
-            e.ToTable("Citizenship", t => t.ExcludeFromMigrations());
+            e.ToTable("Citizenship");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("tinyint").ValueGeneratedOnAdd();
             e.Property(x => x.CountryId).HasColumnType("smallint");
@@ -164,7 +163,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<DocumentIssuer>(e =>
         {
-            e.ToTable("DocumentIssuer", t => t.ExcludeFromMigrations());
+            e.ToTable("DocumentIssuer");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("tinyint").ValueGeneratedOnAdd();
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
@@ -172,7 +171,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<PersonalDataType>(e =>
         {
-            e.ToTable("PersonalDataType", t => t.ExcludeFromMigrations());
+            e.ToTable("PersonalDataType");
             e.HasKey(x => x.Id);
             // PK is NOT identity in the schema — values are seeded by hand.
             e.Property(x => x.Id).HasColumnType("tinyint").ValueGeneratedNever();
@@ -181,7 +180,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<Client>(e =>
         {
-            e.ToTable("Client", t => t.ExcludeFromMigrations());
+            e.ToTable("Client");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
             e.Property(x => x.CompanyId).HasColumnType("tinyint");
@@ -204,7 +203,7 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         b.Entity<ClientPersonalData>(e =>
         {
-            e.ToTable("ClientPersonalData", t => t.ExcludeFromMigrations());
+            e.ToTable("ClientPersonalData");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
             e.Property(x => x.PersonalDataTypeId).HasColumnType("tinyint");

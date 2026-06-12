@@ -178,10 +178,24 @@ else
 // their first call; non-DB routes (Swagger, /) stay healthy.
 try
 {
-    using (var scope = app.Services.CreateScope())
+    // Retry a few times: in container/cloud deployments SQL Server may accept
+    // connections (healthcheck passes) while its engine is still warming up,
+    // which can fail the first DDL batch mid-migration.
+    for (var attempt = 1; ; attempt++)
     {
-        var db = scope.ServiceProvider.GetRequiredService<VteDbContext>();
-        await db.Database.MigrateAsync();
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<VteDbContext>();
+            await db.Database.MigrateAsync();
+            break;
+        }
+        catch (Exception ex) when (attempt < 4)
+        {
+            app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup")
+                .LogWarning(ex, "Migration attempt {Attempt}/4 failed — retrying in 10s.", attempt);
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        }
     }
     await DataSeeder.SeedAsync(app.Services);
 }

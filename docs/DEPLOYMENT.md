@@ -1,8 +1,45 @@
-# Deployment runbook — VTE v2 → Azure (first production deploy)
+# Deployment runbook — VTE v2
 
-Goal: the app live on the internet at `https://<yourname>.azurewebsites.net`, in one evening, with no server administration. One Azure **Web App** serves both the API and the Vue frontend (bundled into `wwwroot` by `deploy/build-release.ps1`); one **Azure SQL** database holds the data.
+## ✅ CURRENT PRODUCTION (deployed 2026-06-12): Hetzner + Docker
 
-> Why Azure and not a raw VPS? With a VPS (Hetzner etc., ~€21/mo) you must install and maintain IIS/SQL Server/certificates/Windows updates yourself over RDP. Azure costs a little more (~€15–20/mo) but all of that is managed, TLS is automatic, and deploys are one command. Start here; move to a VPS later if cost matters more than convenience.
+> Azure rejected the account ("not eligible" — opaque card/region gate), so production runs on a **Hetzner CPX22** (€8.49/mo, Falkenstein DE, Ubuntu 24.04) at:
+>
+> **https://116.202.8.155.sslip.io**
+>
+> Server stack at `/opt/vte` (Docker Compose): `mssql` = SQL Server 2025 Express (free licence, 1.5 GB memory cap, named volume) · `api` = .NET 10 container serving API + Vue SPA from wwwroot · `caddy` = reverse proxy with automatic Let's Encrypt HTTPS via the sslip.io hostname. 4 GB swap on the host, ufw allows only SSH/80/443. Secrets live in `/opt/vte/.env` (server) and `deploy/prod.secrets.local` (laptop, gitignored).
+
+### Redeploy (every future release)
+
+```powershell
+.\deploy\build-release.ps1
+scp -i ~/.ssh/vte_deploy deploy/out/release.zip root@116.202.8.155:/opt/vte/app/release.zip
+ssh -i ~/.ssh/vte_deploy root@116.202.8.155 "cd /opt/vte/app && rm -rf publish && (unzip -q release.zip -d publish || true) && rm release.zip && cd /opt/vte && docker compose up -d --build api"
+```
+
+Schema changes apply automatically on boot (EF migrations with 4-attempt retry).
+
+### Useful server commands
+
+```bash
+ssh -i ~/.ssh/vte_deploy root@116.202.8.155
+docker logs -f vte-api-1                  # app logs
+docker compose -f /opt/vte/docker-compose.yml ps
+# SQL shell:
+docker exec -it vte-mssql-1 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "<SA pw from .env>" -C
+```
+
+### Still to do on this deployment
+
+- [ ] Real-data lift: copy a `.bak` of the local VTE up and `RESTORE DATABASE` inside the mssql container (works — both are SQL 2025 generation), or re-run `migrate/` scripts against a restored legacy snapshot.
+- [ ] Buy a real domain (e.g. `.mk`) and point it at 116.202.8.155 — then change one line in `/opt/vte/Caddyfile` and `docker compose restart caddy`.
+- [ ] Toggle Hetzner's server backup option (€1.40/mo) in the console, or set up nightly `.bak` dumps to Hetzner Storage Box.
+- [ ] Tighten Identity password policy (`Program.cs`) before onboarding real operators.
+
+---
+
+## Alternative path: Azure (kept for reference — requires a subscription)
+
+Goal: the app live at `https://<yourname>.azurewebsites.net` with no server administration. One Azure **Web App** serves both the API and the Vue frontend (bundled into `wwwroot` by `deploy/build-release.ps1`); one **Azure SQL** database holds the data.
 
 ---
 
