@@ -34,6 +34,7 @@ const groups: MenuGroup[] = [
       { to: '/ref/request-ownership-proof-types',   labelKey: 'admin.requestOwnershipProofTypes' },
       { to: '/ref/request-payment-proof-types',     labelKey: 'admin.requestPaymentProofTypes' },
       { to: '/ref/request-attachment-types',        labelKey: 'admin.requestAttachmentTypes' },
+      { to: '/prices',                              labelKey: 'admin.prices' },
       { to: '/legacy-sync',                         labelKey: 'admin.legacySync' },
     ],
   },

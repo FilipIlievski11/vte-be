@@ -153,7 +153,24 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapGet("/", () => Results.Redirect("/swagger"));
+
+// -------- SPA hosting --------
+// In production the Vue build is copied into wwwroot (deploy/build-release.ps1), and the
+// API serves it directly: same origin, so no CORS or separate static host needed.
+// Client-side routes (e.g. /clients/42) fall back to index.html. In dev there is no
+// wwwroot build — Vite serves the frontend — so "/" keeps redirecting to Swagger.
+var webRoot = app.Environment.WebRootPath
+    ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+if (File.Exists(Path.Combine(webRoot, "index.html")))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+    app.MapFallbackToFile("index.html");
+}
+else
+{
+    app.MapGet("/", () => Results.Redirect("/swagger"));
+}
 
 // -------- Migrate + Seed on startup --------
 // Wrapped in try/catch so a transient DB outage (e.g. LocalDB not started) doesn't

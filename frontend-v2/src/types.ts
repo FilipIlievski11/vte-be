@@ -922,3 +922,56 @@ export interface TechExamCertificate {
   organization: TechExamCertOrg;
   vehicle: TechExamCertVehicle;
 }
+
+// ---------- PriceCatalog ----------
+
+/** Mirrors VTE.Domain.Payments.PriceTrigger. */
+export enum PriceTrigger {
+  None = 0,
+  TechnicalExam = 1,
+  Request = 2,
+  TrafficLicence = 3,
+  Permission = 4,
+  IDL = 5,
+  TechnicalExamIrregular = 6,
+}
+
+export interface PriceCatalog {
+  id: number;
+  code: string | null;
+  name: string;
+  basePrice: number;
+  vatRateId: number;
+  trigger: PriceTrigger;
+  vehiclePaymentCategoryId: number | null;
+  communityId: number | null;
+  priceCompanyId: number | null;
+  paymentCategoryGroupId: number | null;
+  vehicleField: string | null;
+  parametarFrom: number | null;
+  parametarTo: number | null;
+  vehicleCategoryFilter: string | null;
+  bankAccount: string | null;
+  paymentForm: string | null;
+  active: boolean;
+}
+
+export type PriceCatalogWrite = Omit<PriceCatalog, 'id'>;
+
+export interface PriceCatalogLookups {
+  triggers: { id: number; name: string }[];
+  companies: number[];
+  vehicleFields: string[];
+  categoryGroups: number[];
+}
+
+/** A vehicle-payment category in the price-catalog master rail. id=null is the
+ * synthetic "uncategorized" bucket (rules with no VehiclePaymentCategoryId). */
+export interface PriceCategoryNode {
+  id: number | null;
+  name: string;
+  zelenMap: number | null;
+  active: boolean;
+  ruleCount: number;
+  activeRuleCount: number;
+}

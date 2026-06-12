@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VTE.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using VTE.Infrastructure.Persistence;
 namespace VTE.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VteDbContext))]
-    partial class VteDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260612220319_AddPriceCatalogPriceCompanyId")]
+    partial class AddPriceCatalogPriceCompanyId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

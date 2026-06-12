@@ -91,6 +91,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true },
       },
       {
+        path: 'prices',
+        name: 'prices',
+        component: () => import('@/views/PricesView.vue'),
+        meta: { requiresAdmin: true },
+      },
+      {
         path: 'legacy-sync',
         name: 'legacy-sync',
         component: () => import('@/views/LegacySyncView.vue'),
