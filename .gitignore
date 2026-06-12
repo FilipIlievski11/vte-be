@@ -108,3 +108,6 @@ TestResults/
 *.ldf
 *.ndf
 *.iso
+
+# build artifacts
+deploy/out/
