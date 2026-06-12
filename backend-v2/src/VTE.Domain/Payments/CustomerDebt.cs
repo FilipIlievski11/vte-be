@@ -53,4 +53,9 @@ public class CustomerDebt : ITenantOwned
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? CreatedByUserId { get; set; }
     public bool Active { get; set; } = true;
+
+    /// <summary>Legacy CustomerFinancialState.Id when this debt was imported/synced
+    /// from the legacy system. Null for debts created natively by v2. Unique
+    /// (filtered) — makes the legacy-sync idempotent.</summary>
+    public long? LegacyId { get; set; }
 }

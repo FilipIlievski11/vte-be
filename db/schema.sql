@@ -1786,6 +1786,31 @@ BEGIN
     VALUES (N'20260612231002_InitialSchema', N'9.0.0');
 END;
 
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260612234823_AddCustomerDebtLegacyId'
+)
+BEGIN
+    ALTER TABLE [CustomerDebt] ADD [LegacyId] bigint NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260612234823_AddCustomerDebtLegacyId'
+)
+BEGIN
+    EXEC(N'CREATE UNIQUE INDEX [IX_CustomerDebt_LegacyId] ON [CustomerDebt] ([LegacyId]) WHERE [LegacyId] IS NOT NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260612234823_AddCustomerDebtLegacyId'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260612234823_AddCustomerDebtLegacyId', N'9.0.0');
+END;
+
 COMMIT;
 GO
 

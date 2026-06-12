@@ -715,6 +715,8 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             // Forensic lookups by origin
             e.HasIndex(x => x.OriginRequestId).HasFilter("[OriginRequestId] IS NOT NULL");
             e.HasIndex(x => x.OriginTechnicalExamId).HasFilter("[OriginTechnicalExamId] IS NOT NULL");
+            // Legacy-sync idempotency: one v2 row per legacy CustomerFinancialState row.
+            e.HasIndex(x => x.LegacyId).IsUnique().HasFilter("[LegacyId] IS NOT NULL");
 
             e.HasQueryFilter(x => _tenant.IsAdmin || x.CompanyId == _tenant.CompanyId);
         });

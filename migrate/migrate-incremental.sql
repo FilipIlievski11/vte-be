@@ -404,6 +404,51 @@ WHERE r.Id > @bReq AND r.LegacyReferenceNumber IS NULL AND src.IdTechnicalExamRe
 PRINT CONCAT('  -> ', @@ROWCOUNT, ' reference numbers computed.');
 
 -- ============================================================================
+-- 10. CustomerDebt ← legacy CustomerFinancialState (the Наплата panel).
+--     Unlike the sections above this one is a state sync, not purely additive:
+--       a) INSERT every OPEN legacy debt (Payed=0, Active=1) not yet imported
+--          (idempotent via CustomerDebt.LegacyId, unique-filtered).
+--          Historical PAID rows are NOT imported — that history already lives
+--          in PaymentDocument*; Наплата only shows open items.
+--       b) UPDATE Paid/Active on previously-imported rows so debts settled or
+--          stornoed in legacy close here too. v2-native debts (LegacyId NULL)
+--          are never touched.
+--     Origin mapping (DebtOrigin enum): IdDocumentTehnicalExam→2 TechnicalExam,
+--     IdDocument→1 Request, TrafficLicences→4, Permisions→5, IDL→6, else 0.
+-- ============================================================================
+PRINT '=== CustomerDebt (Наплата) ===';
+DECLARE @bDebt bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.CustomerDebt);
+
+INSERT INTO dbo.CustomerDebt
+  (CompanyId, CustomerVehicleRelationId, PriceCatalogId, Price, VatPercent, Note,
+   Origin, OriginRequestId, OriginTechnicalExamId, OrganizationId,
+   Paid, SettledByLineId, CreatedAt, CreatedByUserId, Active, LegacyId)
+SELECT 4, s.IdCustomerVehicleRelation, s.IdPriceCatalog, s.Price, 0,
+       LEFT(NULLIF(LTRIM(RTRIM(s.Note)), N''), 300),
+       CASE WHEN s.IdDocumentTehnicalExam > 0 THEN 2
+            WHEN s.IdDocument > 0 THEN 1
+            WHEN s.IdDocumentsTrafficLicences > 0 THEN 4
+            WHEN s.IdDocumentPermisions > 0 THEN 5
+            WHEN s.IdDocumentIternationalDriveingLicence > 0 THEN 6
+            ELSE 0 END,
+       NULLIF(s.IdDocument, 0), NULLIF(s.IdDocumentTehnicalExam, 0),
+       s.IdOrganization, 0, NULL, SYSUTCDATETIME(), NULL, 1, s.Id
+FROM VTEZVV_LIVE.VTEZVV.dbo.CustomerFinancialState s
+INNER JOIN dbo.ClientVehicleRelation rel ON rel.Id = s.IdCustomerVehicleRelation
+INNER JOIN dbo.PriceCatalog pc ON pc.Id = s.IdPriceCatalog
+WHERE s.Payed = 0 AND s.Active = 1
+  AND NOT EXISTS (SELECT 1 FROM dbo.CustomerDebt d WHERE d.LegacyId = s.Id);
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' new open debts imported.');
+
+-- legacy rows that we hold open but legacy has since paid/stornoed
+UPDATE d SET d.Paid = s.Payed, d.Active = s.Active
+FROM dbo.CustomerDebt d
+INNER JOIN VTEZVV_LIVE.VTEZVV.dbo.CustomerFinancialState s ON s.Id = d.LegacyId
+WHERE d.LegacyId IS NOT NULL
+  AND (d.Paid <> s.Payed OR d.Active <> s.Active);
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' imported debts state-synced (paid/storno).');
+
+-- ============================================================================
 -- Verification
 -- ============================================================================
 PRINT '';
@@ -416,7 +461,8 @@ UNION ALL SELECT 'Request',              COUNT(*) FROM dbo.Request              
 UNION ALL SELECT 'OwnershipProof',       COUNT(*) FROM dbo.RequestOwnershipProof WHERE Id > @bOwn
 UNION ALL SELECT 'PaymentProof',         COUNT(*) FROM dbo.RequestPaymentProof   WHERE Id > @bPay
 UNION ALL SELECT 'TechnicalExamReport',  COUNT(*) FROM dbo.TechnicalExamReport       WHERE Id > @bTeh
-UNION ALL SELECT 'TechExamReportDetail', COUNT(*) FROM dbo.TechnicalExamReportDetail WHERE Id > @bTehD;
+UNION ALL SELECT 'TechExamReportDetail', COUNT(*) FROM dbo.TechnicalExamReportDetail WHERE Id > @bTehD
+UNION ALL SELECT 'CustomerDebt',         COUNT(*) FROM dbo.CustomerDebt              WHERE Id > @bDebt;
 
 COMMIT TRANSACTION;
 PRINT '';
