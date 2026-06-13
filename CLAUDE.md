@@ -66,6 +66,8 @@ AND (IdCompany = @IdCompany OR IdCompany = 0)
 | 11 | **Ownership transfer**: when `requestType.TransfersOwnership && entity.NewClientVehicleRelationId.HasValue`, debts route to `NewClientVehicleRelationId.Value` — NOT `ClientVehicleRelationId`. |
 | 12 | **Community filter**: resolve customer's living community via `relation → client → city.CommunityId` and feed into rule lookup. |
 | 13 | **Single-Trigger limitation**: v2 `PriceCatalog.Trigger` is one enum value per row. Legacy supports multiple `TrigerdBy*` flags on one rule — those need split into multiple v2 rows. Not yet automated. |
+| 14 | **Duplicate PaymentType ids**: the legacy `PaymentTypes` table repeats each type once per company (no company column), and the same fee can carry a different doc-number `Prefix` per company. `usedOnly` dedup groups by **trimmed Name** (legacy names have stray leading spaces) and keeps the id whose **most recent bill** is newest. Picking a stale sibling forks the doc-number sequence (hit this with "со кредитна картичка" 19 vs 24 and "по договор" 18 vs 23). |
+| 15 | **NEVER pass the prod admin password through a bash double-quoted string** — it's `Vte!1...` and bash history-expands `!1`, sending a wrong password. ~5 wrong tries trips ASP.NET lockout ("Account is locked."). Log in via a Node script that reads `deploy/prod.secrets.local` directly. To clear a lockout: `UPDATE AspNetUsers SET LockoutEnd=NULL, AccessFailedCount=0`. ASP.NET Identity password hashes are self-contained/portable — you can copy a known-good hash between the local and prod `AspNetUsers` to reset a password by SQL (sqlcmd needs `-I` for QUOTED_IDENTIFIER on that table's filtered index). |
 
 ## Domain enums (memorize)
 
