@@ -61,6 +61,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'requests/:id', name: 'request-edit', component: () => import('@/views/RequestFormView.vue'), props: true },
       { path: 'payments', name: 'payments', component: () => import('@/views/PaymentsView.vue') },
       { path: 'payments/:id', name: 'payment', component: () => import('@/views/PaymentView.vue'), props: true },
+      { path: 'fiscal', name: 'fiscal', component: () => import('@/views/FiscalOptionsView.vue') },
       { path: 'technical-exams', name: 'technical-exams', component: () => import('@/views/TechnicalExamsView.vue') },
       { path: 'technical-exams/new', name: 'technical-exam-new', component: () => import('@/views/TechExamFormView.vue') },
       { path: 'technical-exams/:id', name: 'technical-exam', component: () => import('@/views/TechnicalExamReportView.vue'), props: true },

@@ -9,6 +9,7 @@ import Tag from 'primevue/tag';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import { useToast } from 'primevue/usetoast';
+import { printFiscalForDocument } from '@/fiscal/fiscal';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
@@ -29,6 +30,34 @@ async function load() {
   }
 }
 onMounted(load);
+
+const fiscalBusy = ref(false);
+async function printFiscal() {
+  fiscalBusy.value = true;
+  try {
+    const res = await printFiscalForDocument(props.id, true);
+    switch (res.status) {
+      case 'printed':
+        toast.add({ severity: 'success', summary: t('fiscal.printedOk'), life: 3000 });
+        await load();
+        break;
+      case 'skipped':
+        toast.add({ severity: 'info', summary: t('fiscal.skipped'), detail: res.reason, life: 4000 });
+        break;
+      case 'no-folder':
+        toast.add({ severity: 'warn', summary: t('fiscal.noFolder'), detail: t('fiscal.goConfigure'), life: 5000 });
+        break;
+      case 'unsupported':
+        toast.add({ severity: 'warn', summary: t('fiscal.unsupportedShort'), life: 5000 });
+        break;
+      case 'error':
+        toast.add({ severity: 'error', summary: t('fiscal.printFailed'), detail: res.message, life: 5000 });
+        break;
+    }
+  } finally {
+    fiscalBusy.value = false;
+  }
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return '—';
@@ -75,6 +104,10 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
         </div>
       </div>
       <div class="head-right" v-if="bill">
+        <Tag v-if="bill.fiscalPrintedAt" :value="t('fiscal.printedTag')" severity="info" class="big-tag"
+          v-tooltip.bottom="fmtDateTime(bill.fiscalPrintedAt)" />
+        <Button :label="t('fiscal.printReceipt')" icon="pi pi-print" size="small"
+          :loading="fiscalBusy" @click="printFiscal" />
         <Tag :value="statusTag.label" :severity="statusTag.severity" class="big-tag" />
       </div>
     </div>

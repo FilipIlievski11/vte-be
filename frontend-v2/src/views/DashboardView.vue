@@ -13,6 +13,7 @@ import type { TreeNode } from 'primevue/treenode';
 import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
+import { printFiscalForDocument } from '@/fiscal/fiscal';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -158,6 +159,13 @@ async function createBill() {
     selectedDebtIds.value = new Set();
     await refreshDebts();
     toast.add({ severity: 'success', summary: t('dashboard.naplata.billCreated', { no: data.documentNumber }), life: 3500 });
+    // Legacy parity: fiscal receipt prints right after the bill is saved. Quiet
+    // attempt (no permission prompts mid-flow); the bill page has a manual button.
+    const fiscal = await printFiscalForDocument(data.id, false);
+    if (fiscal.status === 'printed')
+      toast.add({ severity: 'success', summary: t('fiscal.printedOk'), life: 2500 });
+    else if (fiscal.status === 'no-folder' || fiscal.status === 'error')
+      toast.add({ severity: 'warn', summary: t('fiscal.autoPrintFailed'), life: 4500 });
     router.push(`/payments/${data.id}`);
   } catch (e: any) {
     toast.add({ severity: 'error', summary: t('dashboard.naplata.billFailed'),

@@ -91,6 +91,7 @@ const pageTitle = computed(() => {
   if (path.startsWith('/requests')) return t('nav.requests');
   if (path.startsWith('/technical-exams')) return t('nav.technicalExams');
   if (path.startsWith('/payments')) return t('nav.payments');
+  if (path.startsWith('/fiscal')) return t('nav.fiscal');
   if (path.startsWith('/companies')) return `${t('nav.administration')} · ${t('admin.companies')}`;
   if (path.startsWith('/stations')) return `${t('nav.administration')} · ${t('admin.stations')}`;
   if (path.startsWith('/operators')) return `${t('nav.administration')} · ${t('admin.operators')}`;
@@ -153,6 +154,11 @@ async function logout() {
             <li>
               <RouterLink to="/payments" class="topnav">
                 <i class="pi pi-wallet" /><span>{{ t('nav.payments') }}</span>
+              </RouterLink>
+            </li>
+            <li>
+              <RouterLink to="/fiscal" class="topnav">
+                <i class="pi pi-print" /><span>{{ t('nav.fiscal') }}</span>
               </RouterLink>
             </li>
           </ul>

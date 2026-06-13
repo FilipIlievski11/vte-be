@@ -446,6 +446,130 @@ public class PaymentDocumentsController : ControllerBase
             new CreateBillResponse(doc.Id, doc.DocumentNumber, total, lines.Count));
     }
 
+    // ---- Fiscal printing (Accent PF-500, file-exchange protocol) ----
+    //
+    // The legacy WinApp printed fiscal receipts by writing a command file into a
+    // folder watched by the Accent PF-500 vendor driver (FiskalModule.vb:
+    // PecatiFiskalnaSmetaAccentPF500). v2 keeps the same integration: this endpoint
+    // composes the exact file content; the browser writes it into the operator's
+    // configured fiscal folder via the File System Access API. The driver and folder
+    // already exist on every operator PC — nothing new to install.
+
+    public record FiscalFileDto(
+        bool PrintsFiscal, string? SkipReason,
+        string FileName, string ContentBase64,
+        DateTime? FiscalPrintedAt);
+
+    [HttpGet("{id:long}/fiscal-file")]
+    public async Task<ActionResult<FiscalFileDto>> FiscalFile(long id)
+    {
+        var doc = await _db.PaymentDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+
+        var type = await _db.PaymentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == doc.PaymentTypeId);
+        // Legacy gate: only Fiskalna_kes (cash) payment types print a fiscal receipt.
+        if (type is not { IsCash: true })
+            return Ok(new FiscalFileDto(false, "Фискална сметка се печати само за готовинско плаќање.", "", "", doc.FiscalPrintedAt));
+
+        var lines = await (
+            from l in _db.PaymentDocumentLines.AsNoTracking()
+            join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
+            where l.PaymentDocumentId == id && l.Active
+            orderby l.Id
+            select new { l.UnitPrice, l.Discount, l.Quantity, l.VatPercent, CatalogName = pc.Name }
+        ).ToListAsync();
+
+        var total = lines.Sum(l => Math.Round((double)l.UnitPrice * l.Quantity * (1 - l.Discount / 100), 0));
+        if (lines.Count == 0 || total == 0)
+            return Ok(new FiscalFileDto(false, "Сметката нема износ за фискализација.", "", "", doc.FiscalPrintedAt));
+
+        var sb = new System.Text.StringBuilder();
+        // header: open receipt (storno opens a storno receipt)
+        sb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var l = lines[i];
+            // VAT class byte (CP1251 А/Б/В): 18% → 192, 5% → 193, 0% → 194.
+            // Legacy silently truncated the receipt on an unknown rate; we refuse loudly.
+            var vatByte = l.VatPercent switch
+            {
+                18 => (byte)192,
+                5  => (byte)193,
+                0  => (byte)194,
+                _  => (byte)0,
+            };
+            if (vatByte == 0)
+                return BadRequest(new { error = $"Ставка со непозната ДДВ стапка ({l.VatPercent}%) — не може да се фискализира." });
+
+            // discount applied and rounded to whole denars (legacy Math.Round semantics)
+            var price = Math.Round((double)l.UnitPrice * (1 - l.Discount / 100), 0) * l.Quantity;
+
+            sb.Append(i % 2 == 0 ? "'1" : " 1")                       // legacy alternates the marker
+              .Append(Left(ToLat(l.CatalogName), 24))
+              .Append('\t')
+              .Append((char)vatByte)
+              .Append(price.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+              .Append("\r\n");
+        }
+
+        sb.Append(" 5 Smetka\t\r\n");                                  // subtotal command
+        sb.Append(doc.Stornoed ? "%V" : "%8").Append("\r\n");          // close receipt
+
+        // CP1251-compatible bytes: everything is ASCII after transliteration except the
+        // VAT class bytes (192/193/194), which must survive as single bytes.
+        var text = sb.ToString();
+        var bytes = new byte[text.Length];
+        for (var i = 0; i < text.Length; i++) bytes[i] = (byte)text[i];
+
+        return Ok(new FiscalFileDto(
+            true, null,
+            $"smetkaID{doc.Id}.txt",
+            Convert.ToBase64String(bytes),
+            doc.FiscalPrintedAt));
+    }
+
+    /// <summary>Outbox marker: the browser confirmed the command file was written into
+    /// the fiscal folder. Idempotent — keeps the first timestamp.</summary>
+    [HttpPost("{id:long}/fiscal-printed")]
+    public async Task<IActionResult> FiscalPrinted(long id)
+    {
+        var doc = await _db.PaymentDocuments.FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+        doc.FiscalPrintedAt ??= DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private static string Left(string s, int n) => s.Length <= n ? s : s[..n];
+
+    /// <summary>Macedonian Cyrillic → Latin transliteration, ported from the legacy
+    /// KondnaTastaturaModule.ToLat (incl. digraphs); unmapped characters pass through.
+    /// Fixes the legacy off-by-one that left capital "А" untransliterated.</summary>
+    private static string ToLat(string input)
+    {
+        var sb = new System.Text.StringBuilder(input.Length + 8);
+        foreach (var ch in input)
+        {
+            sb.Append(ch switch
+            {
+                'А' => "A", 'Б' => "B", 'В' => "V", 'Г' => "G", 'Д' => "D", 'Е' => "E",
+                'З' => "Z", 'И' => "I", 'Ј' => "J", 'К' => "K", 'Л' => "L", 'М' => "M",
+                'Н' => "N", 'О' => "O", 'П' => "P", 'Р' => "R", 'С' => "S", 'Т' => "T",
+                'У' => "U", 'Ф' => "F", 'Х' => "H", 'Ц' => "C",
+                'а' => "a", 'б' => "b", 'в' => "v", 'г' => "g", 'д' => "d", 'е' => "e",
+                'з' => "z", 'и' => "i", 'ј' => "j", 'к' => "k", 'л' => "l", 'м' => "m",
+                'н' => "n", 'о' => "o", 'п' => "p", 'р' => "r", 'с' => "s", 'т' => "t",
+                'у' => "u", 'ф' => "f", 'х' => "h", 'ц' => "c",
+                'Ѕ' => "DZ", 'ѕ' => "dz", 'Љ' => "LJ", 'љ' => "lj", 'Њ' => "NJ", 'њ' => "nj",
+                'Ѓ' => "GJ", 'ѓ' => "gj", 'Ж' => "ZH", 'ж' => "zh", 'Ќ' => "KJ", 'ќ' => "kj",
+                'Ч' => "CH", 'ч' => "ch", 'Ш' => "SH", 'ш' => "sh", 'Џ' => "DJ", 'џ' => "dj",
+                _ => ch.ToString(),
+            });
+        }
+        return sb.ToString();
+    }
+
     // ---- Lookups (used by the create-bill UI) ----
 
     public record PaymentTypeDto(int Id, string? Code, string Name, bool IsCash, bool IsCard, bool IsInstallment, bool PrintsReceipt, bool PrintsInvoice, string? Prefix);
