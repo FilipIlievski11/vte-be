@@ -699,6 +699,8 @@ export default {
       deleteConfirm: 'Delete the debt "{service}" ({price} den.)?',
       deleted: 'Debt deleted',
       selectGroup: 'Select all for this client',
+      paid: 'Paid',
+      paidTip: 'This item has been billed / paid',
       makeBill: 'Make bill ({n})',
       makeBillTitle: 'New bill from selected debts',
       makeBillConfirm: 'Make bill',

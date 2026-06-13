@@ -699,6 +699,8 @@ export default {
       deleteConfirm: 'Дали сакаш да ја избришеш ставката „{service}" ({price} ден.)?',
       deleted: 'Ставката е избришана',
       selectGroup: 'Избери ги сите за овој клиент',
+      paid: 'Платено',
+      paidTip: 'Оваа ставка е фактурирана/платена',
       makeBill: 'Направи сметка ({n})',
       makeBillTitle: 'Нова сметка од избраните ставки',
       makeBillConfirm: 'Направи сметка',

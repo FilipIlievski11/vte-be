@@ -49,7 +49,8 @@ interface DebtClientGroup {
   vehicleVin: string | null;
   vehicleMakerModel: string | null;
   rows: CustomerDebtRow[];
-  total: number;
+  total: number;        // amount still owed (unpaid rows only)
+  unpaidCount: number;
 }
 const debtGroups = computed<DebtClientGroup[]>(() => {
   const out: DebtClientGroup[] = [];
@@ -65,11 +66,12 @@ const debtGroups = computed<DebtClientGroup[]>(() => {
         vehicleMakerModel: d.vehicleMakerModel,
         rows: [],
         total: 0,
+        unpaidCount: 0,
       };
       out.push(g);
     }
     g.rows.push(d);
-    g.total += d.price;
+    if (!d.paid) { g.total += d.price; g.unpaidCount++; }   // paid rows stay listed but don't add to "owed"
   }
   return out;
 });
@@ -77,7 +79,10 @@ const debtGroups = computed<DebtClientGroup[]>(() => {
 async function refreshDebts() {
   try {
     const [list, summary] = await Promise.all([
-      api.get<Paged<CustomerDebtRow>>('/customer-debts', { params: { unpaidOnly: true, pageSize: 50 } }),
+      // Legacy parity: the Наплата panel is a ledger of ALL active charges for the
+      // company (getCustomerFinancialStateList filters on Active, not Payed) — a
+      // billed charge stays listed, marked Платено, instead of disappearing.
+      api.get<Paged<CustomerDebtRow>>('/customer-debts', { params: { unpaidOnly: false, pageSize: 200 } }),
       api.get<{ count: number; total: number }>('/customer-debts/summary'),
     ]);
     debts.value = list.data.items ?? [];
@@ -101,17 +106,19 @@ function toggleSelected(id: number, on: boolean) {
   if (on) s.add(id); else s.delete(id);
   selectedDebtIds.value = s;
 }
-// Group-level select toggle (used by the per-group checkbox in the row's client header).
-function groupSelectState(group: { rows: { id: number }[] }): boolean | 'indeterminate' {
-  const total = group.rows.length;
-  const selected = group.rows.filter(r => selectedDebtIds.value.has(r.id)).length;
+// Selection only ever applies to UNPAID rows — paid charges stay listed (legacy
+// ledger) but can't be re-billed or bulk-deleted.
+function groupSelectState(group: { rows: CustomerDebtRow[] }): boolean | 'indeterminate' {
+  const open = group.rows.filter(r => !r.paid);
+  if (open.length === 0) return false;
+  const selected = open.filter(r => selectedDebtIds.value.has(r.id)).length;
   if (selected === 0) return false;
-  if (selected === total) return true;
+  if (selected === open.length) return true;
   return 'indeterminate';
 }
-function toggleGroup(group: { rows: { id: number }[] }, on: boolean) {
+function toggleGroup(group: { rows: CustomerDebtRow[] }, on: boolean) {
   const s = new Set(selectedDebtIds.value);
-  for (const r of group.rows) { if (on) s.add(r.id); else s.delete(r.id); }
+  for (const r of group.rows) { if (r.paid) continue; if (on) s.add(r.id); else s.delete(r.id); }
   selectedDebtIds.value = s;
 }
 
@@ -396,15 +403,20 @@ onMounted(async () => {
             </span>
             <span class="grp-total mono">{{ fmtMoney(g.total) }}</span>
           </div>
-          <div v-for="r in g.rows" :key="r.id" class="grp-row" :class="{ selected: isSelected(r.id) }">
-            <Checkbox
+          <div v-for="r in g.rows" :key="r.id" class="grp-row"
+               :class="{ selected: isSelected(r.id), 'row-paid': r.paid }">
+            <Checkbox v-if="!r.paid"
               :modelValue="isSelected(r.id)"
               :binary="true"
               @update:modelValue="(v: boolean) => toggleSelected(r.id, v)"
             />
+            <span v-else class="paid-dot" v-tooltip.right="t('dashboard.naplata.paidTip')"><i class="pi pi-check" /></span>
             <span class="col-service" :title="r.priceCatalogName ?? ''">{{ r.priceCatalogName || '—' }}</span>
             <span class="col-note muted" :title="r.note ?? ''">{{ r.note || '' }}</span>
-            <span class="col-price mono">{{ fmtMoney(r.price) }}</span>
+            <span class="col-price mono">
+              {{ fmtMoney(r.price) }}
+              <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+            </span>
           </div>
         </div>
 
@@ -675,6 +687,11 @@ onMounted(async () => {
 .bill-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem }
 .rati-hint { font-size: .82rem; margin-top: -.1rem }
 .grp-row.selected { background: var(--p-highlight-background, rgba(37, 99, 235, .06)) }
+.grp-row.row-paid .col-service, .grp-row.row-paid .col-note { opacity: .55 }
+.grp-row.row-paid .col-price { opacity: .7 }
+.paid-dot { display: inline-flex; align-items: center; justify-content: center; color: var(--p-green-500, #22c55e) }
+.paid-dot i { font-size: .7rem }
+.paid-tag { transform: scale(.72); transform-origin: right center; vertical-align: middle }
 /* Shrink PrimeVue Checkbox to fit our 1.1rem column */
 .naplata :deep(.p-checkbox), .naplata :deep(.p-checkbox-box) { width: .95rem; height: .95rem }
 .naplata :deep(.p-checkbox-icon) { font-size: .65rem }
