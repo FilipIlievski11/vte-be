@@ -11,6 +11,8 @@ import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import type { TreeNode } from 'primevue/treenode';
 import Checkbox from 'primevue/checkbox';
+import Dialog from 'primevue/dialog';
+import Select from 'primevue/select';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -108,6 +110,61 @@ function toggleGroup(group: { rows: { id: number }[] }, on: boolean) {
   const s = new Set(selectedDebtIds.value);
   for (const r of group.rows) { if (on) s.add(r.id); else s.delete(r.id); }
   selectedDebtIds.value = s;
+}
+
+// --- Направи сметка (bill from selected debts) ---
+const billDialogVisible = ref(false);
+const billTypeId = ref<number | null>(null);
+const billSaving = ref(false);
+interface PaymentTypeOpt { id: number; name: string; isCash: boolean; isInstallment: boolean; prefix: string | null }
+const paymentTypes = ref<PaymentTypeOpt[]>([]);
+
+/** Distinct relation ids among the selected debt rows — a bill covers exactly one. */
+const selectedRelationIds = computed(() => {
+  const s = new Set<number>();
+  for (const d of debts.value) if (selectedDebtIds.value.has(d.id)) s.add(d.customerVehicleRelationId);
+  return s;
+});
+
+const selectedTotal = computed(() =>
+  debts.value.filter(d => selectedDebtIds.value.has(d.id)).reduce((sum, d) => sum + d.price, 0));
+
+async function openBillDialog() {
+  if (selectedRelationIds.value.size !== 1) {
+    toast.add({ severity: 'warn', summary: t('dashboard.naplata.billOneClient'), life: 3000 });
+    return;
+  }
+  if (paymentTypes.value.length === 0) {
+    try {
+      const { data } = await api.get<PaymentTypeOpt[]>('/payment-documents/payment-types', { params: { usedOnly: true } });
+      paymentTypes.value = data.filter(x => !x.isInstallment);
+    } catch { /* dropdown stays empty; dialog still opens */ }
+  }
+  // default: cash ("во готово" — the un-prefixed cash type)
+  billTypeId.value = paymentTypes.value.find(x => x.isCash && !x.prefix)?.id
+    ?? paymentTypes.value.find(x => x.isCash)?.id
+    ?? paymentTypes.value[0]?.id ?? null;
+  billDialogVisible.value = true;
+}
+
+async function createBill() {
+  if (!billTypeId.value) return;
+  billSaving.value = true;
+  try {
+    const { data } = await api.post<{ id: number; documentNumber: string; linesTotal: number; lines: number }>(
+      '/payment-documents/from-debts',
+      { debtIds: [...selectedDebtIds.value], paymentTypeId: billTypeId.value });
+    billDialogVisible.value = false;
+    selectedDebtIds.value = new Set();
+    await refreshDebts();
+    toast.add({ severity: 'success', summary: t('dashboard.naplata.billCreated', { no: data.documentNumber }), life: 3500 });
+    router.push(`/payments/${data.id}`);
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('dashboard.naplata.billFailed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 4500 });
+  } finally {
+    billSaving.value = false;
+  }
 }
 
 async function deleteSelectedDebts() {
@@ -250,6 +307,14 @@ onMounted(async () => {
           <span v-if="debtCount" class="count-pill">{{ debtCount }}</span>
         </h2>
         <div class="naplata-actions">
+          <Button
+            v-if="selectedDebtIds.size > 0"
+            :label="t('dashboard.naplata.makeBill', { n: selectedDebtIds.size })"
+            icon="pi pi-file" severity="primary" size="small"
+            :disabled="selectedRelationIds.size !== 1"
+            v-tooltip.bottom="selectedRelationIds.size !== 1 ? t('dashboard.naplata.billOneClient') : undefined"
+            @click="openBillDialog"
+          />
           <Button
             v-if="selectedDebtIds.size > 0"
             :label="t('dashboard.naplata.deleteSelected', { n: selectedDebtIds.size })"
@@ -402,6 +467,32 @@ onMounted(async () => {
       <span>{{ t('dashboard.recentExams.empty') }}</span>
     </div>
   </div>
+
+  <!-- Направи сметка dialog -->
+  <Dialog v-model:visible="billDialogVisible" :header="t('dashboard.naplata.makeBillTitle')"
+    :modal="true" :style="{ width: '26rem' }">
+    <div class="bill-form">
+      <div class="bill-row">
+        <span class="muted">{{ t('dashboard.naplata.billItems') }}</span>
+        <span>{{ selectedDebtIds.size }}</span>
+      </div>
+      <div class="bill-row">
+        <span class="muted">{{ t('dashboard.naplata.billTotal') }}</span>
+        <span class="mono"><b>{{ fmtMoney(selectedTotal) }}</b> {{ t('dashboard.naplata.den') }}</span>
+      </div>
+      <div class="bill-field">
+        <label>{{ t('dashboard.naplata.billType') }}</label>
+        <Select v-model="billTypeId" :options="paymentTypes"
+          optionLabel="name" optionValue="id" class="bill-type-select" />
+      </div>
+    </div>
+    <template #footer>
+      <Button :label="t('common.cancel')" severity="secondary" outlined :disabled="billSaving"
+        @click="billDialogVisible = false" />
+      <Button :label="t('dashboard.naplata.makeBillConfirm')" icon="pi pi-check" severity="primary"
+        :loading="billSaving" :disabled="!billTypeId" @click="createBill" />
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -498,6 +589,11 @@ onMounted(async () => {
 .naplata-head .col-note,
 .naplata-head .col-price { line-height: 1 }
 .naplata-actions { display: flex; gap: .35rem; align-items: center }
+.bill-form { display: flex; flex-direction: column; gap: .6rem }
+.bill-row { display: flex; justify-content: space-between; font-size: .9rem }
+.bill-field { display: flex; flex-direction: column; gap: .3rem; margin-top: .4rem }
+.bill-field label { font-size: .8rem; color: var(--p-text-muted-color) }
+.bill-type-select { width: 100% }
 .grp-row.selected { background: var(--p-highlight-background, rgba(37, 99, 235, .06)) }
 /* Shrink PrimeVue Checkbox to fit our 1.1rem column */
 .naplata :deep(.p-checkbox), .naplata :deep(.p-checkbox-box) { width: .95rem; height: .95rem }

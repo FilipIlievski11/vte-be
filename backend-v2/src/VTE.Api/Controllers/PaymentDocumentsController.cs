@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VTE.Api.Dtos;
+using VTE.Domain.Payments;
 using VTE.Infrastructure.Persistence;
 using VTE.Infrastructure.Tenancy;
 
@@ -316,17 +317,155 @@ public class PaymentDocumentsController : ControllerBase
             linesTotal, lines, installments));
     }
 
-    // ---- Lookups (used by the future create-bill UI) ----
+    // ---- Create (Phase 2): bill from selected open debts ----
+
+    public record CreateFromDebtsRequest(
+        IReadOnlyList<long> DebtIds,
+        int PaymentTypeId,
+        string? Note,
+        DateTime? DueDate);
+
+    public record CreateBillResponse(long Id, string DocumentNumber, decimal LinesTotal, int Lines);
+
+    /// <summary>
+    /// Legacy "Направи сметка": turns selected open <see cref="VTE.Domain.Payments.CustomerDebt"/>
+    /// rows into one PaymentDocument with a line per debt, marks the debts settled, and
+    /// assigns the next document number in the legacy format
+    /// <c>[prefix-]{org}-{seq}/{year}</c> (sequence per organization + payment type + year,
+    /// continuing the migrated numbering). Cash payment types are marked Paid immediately.
+    /// </summary>
+    [HttpPost("from-debts")]
+    public async Task<ActionResult<CreateBillResponse>> CreateFromDebts([FromBody] CreateFromDebtsRequest req)
+    {
+        if (req?.DebtIds is null || req.DebtIds.Count == 0)
+            return BadRequest(new { error = "Не се избрани ставки за наплата." });
+        if (req.DebtIds.Count > 100)
+            return BadRequest(new { error = "Премногу ставки (макс. 100)." });
+
+        var type = await _db.PaymentTypes.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == req.PaymentTypeId && t.Active);
+        if (type == null)
+            return BadRequest(new { error = "Непостоечки начин на плаќање." });
+        if (type.IsInstallment)
+            return BadRequest(new { error = "Плаќање на рати (по договор) сè уште не е поддржано." });
+
+        var debts = await _db.CustomerDebts
+            .Where(d => req.DebtIds.Contains(d.Id))
+            .ToListAsync();                                   // tenant filter applies
+
+        if (debts.Count != req.DebtIds.Count)
+            return BadRequest(new { error = "Некои од избраните ставки не постојат или не се достапни." });
+        if (debts.Any(d => !d.Active))
+            return BadRequest(new { error = "Некои од избраните ставки се избришани." });
+        if (debts.Any(d => d.Paid))
+            return BadRequest(new { error = "Некои од избраните ставки се веќе платени." });
+
+        var relationId = debts[0].CustomerVehicleRelationId;
+        if (debts.Any(d => d.CustomerVehicleRelationId != relationId))
+            return BadRequest(new { error = "Сите ставки мора да бидат за ист клиент и возило (една сметка = еден клиент)." });
+
+        var companyId = debts[0].CompanyId;
+        var organizationId = debts[0].OrganizationId;
+
+        // VAT snapshot per catalog entry (current rate at the moment of billing —
+        // the line keeps the snapshot so history survives future rate changes).
+        var pcIds = debts.Select(d => d.PriceCatalogId).Distinct().ToList();
+        var vatByPc = await (
+            from pc in _db.PriceCatalogs.AsNoTracking()
+            join v in _db.VatRates.AsNoTracking() on pc.VatRateId equals v.Id into vv
+            from v in vv.DefaultIfEmpty()
+            where pcIds.Contains(pc.Id)
+            select new { pc.Id, Percent = (double?)v.Percent }
+        ).ToDictionaryAsync(x => x.Id, x => x.Percent ?? 0d);
+
+        var now = DateTime.UtcNow;
+
+        // Serializable so two simultaneous bills can't draw the same sequence number.
+        await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+        // Next sequence for (org, type, year). DocumentNumber format: [prefix-]org-seq/year —
+        // seq is the segment between the last '-' and the '/'. TRY_CAST skips legacy oddballs.
+        var yearSuffix = $"/{now.Year}";
+        var seqRow = await _db.Database.SqlQuery<long?>($@"
+            SELECT MAX(TRY_CAST(LEFT(tail, CHARINDEX('/', tail) - 1) AS bigint)) AS [Value]
+            FROM (
+                SELECT RIGHT(DocumentNumber, CHARINDEX('-', REVERSE(DocumentNumber)) - 1) AS tail
+                FROM dbo.PaymentDocument
+                WHERE OrganizationId = {organizationId}
+                  AND PaymentTypeId = {req.PaymentTypeId}
+                  AND CHARINDEX('-', DocumentNumber) > 0
+                  AND CHARINDEX('/', DocumentNumber) > 0
+                  AND DocumentNumber LIKE {"%" + yearSuffix}
+            ) t
+            WHERE CHARINDEX('/', tail) > 1").FirstOrDefaultAsync();
+        var seq = (seqRow ?? 0) + 1;
+        var prefixPart = string.IsNullOrWhiteSpace(type.Prefix) ? "" : type.Prefix + "-";
+        var documentNumber = $"{prefixPart}{organizationId}-{seq}{yearSuffix}";
+
+        var doc = new PaymentDocument
+        {
+            CompanyId = companyId,
+            PaymentTypeId = type.Id,
+            CustomerVehicleRelationId = relationId,
+            OrganizationId = organizationId,
+            DocumentNumber = documentNumber,
+            IssueDate = now,
+            DueDate = req.DueDate ?? (type.IsCash ? now : now.AddDays(15)),
+            Paid = type.IsCash,                                // cash settles on the spot
+            Note = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim(),
+            CreatedByUserId = _tenant.UserId,
+        };
+        _db.PaymentDocuments.Add(doc);
+        await _db.SaveChangesAsync();
+
+        var lines = debts.Select(d => new PaymentDocumentLine
+        {
+            CompanyId = companyId,
+            PaymentDocumentId = doc.Id,
+            PriceCatalogId = d.PriceCatalogId,
+            UnitPrice = d.Price,
+            VatPercent = vatByPc.GetValueOrDefault(d.PriceCatalogId, 0d),
+            Discount = 0,
+            Quantity = 1,
+            Note = d.Note,
+            CustomerDebtId = d.Id,
+        }).ToList();
+        _db.PaymentDocumentLines.AddRange(lines);
+        await _db.SaveChangesAsync();
+
+        foreach (var (debt, line) in debts.Zip(lines))
+        {
+            debt.Paid = true;
+            debt.SettledByLineId = line.Id;
+        }
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        var total = lines.Sum(l => l.UnitPrice * l.Quantity);
+        return CreatedAtAction(nameof(Get), new { id = doc.Id },
+            new CreateBillResponse(doc.Id, doc.DocumentNumber, total, lines.Count));
+    }
+
+    // ---- Lookups (used by the create-bill UI) ----
 
     public record PaymentTypeDto(int Id, string? Code, string Name, bool IsCash, bool IsCard, bool IsInstallment, bool PrintsReceipt, bool PrintsInvoice, string? Prefix);
     public record VatRateDto(int Id, string? Code, string Name, double Percent);
 
+    /// <summary>Payment types. The legacy table repeats each type once per company with
+    /// no company column, so <paramref name="usedOnly"/>=true narrows to the ids this
+    /// tenant has actually billed with — picking a sibling duplicate would silently
+    /// start a separate document-number sequence.</summary>
     [HttpGet("payment-types")]
-    public async Task<ActionResult<IReadOnlyList<PaymentTypeDto>>> PaymentTypes() =>
-        Ok(await _db.PaymentTypes.AsNoTracking().Where(p => p.Active)
+    public async Task<ActionResult<IReadOnlyList<PaymentTypeDto>>> PaymentTypes([FromQuery] bool usedOnly = false)
+    {
+        var q = _db.PaymentTypes.AsNoTracking().Where(p => p.Active);
+        if (usedOnly)
+            q = q.Where(p => _db.PaymentDocuments.Any(d => d.PaymentTypeId == p.Id));
+        return Ok(await q
             .OrderBy(p => p.Name)
             .Select(p => new PaymentTypeDto(p.Id, p.Code, p.Name, p.IsCash, p.IsCard, p.IsInstallment, p.PrintsReceipt, p.PrintsInvoice, p.Prefix))
             .ToListAsync());
+    }
 
     [HttpGet("vat-rates")]
     public async Task<ActionResult<IReadOnlyList<VatRateDto>>> VatRates() =>

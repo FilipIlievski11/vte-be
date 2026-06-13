@@ -440,11 +440,15 @@ WHERE s.Payed = 0 AND s.Active = 1
   AND NOT EXISTS (SELECT 1 FROM dbo.CustomerDebt d WHERE d.LegacyId = s.Id);
 PRINT CONCAT('  -> ', @@ROWCOUNT, ' new open debts imported.');
 
--- legacy rows that we hold open but legacy has since paid/stornoed
+-- legacy rows that we hold open but legacy has since paid/stornoed.
+-- SettledByLineId guard: a debt settled NATIVELY in v2 (billed here) must never be
+-- re-opened just because legacy still shows it unpaid — v2 is authoritative for
+-- its own payments.
 UPDATE d SET d.Paid = s.Payed, d.Active = s.Active
 FROM dbo.CustomerDebt d
 INNER JOIN VTEZVV_LIVE.VTEZVV.dbo.CustomerFinancialState s ON s.Id = d.LegacyId
 WHERE d.LegacyId IS NOT NULL
+  AND d.SettledByLineId IS NULL
   AND (d.Paid <> s.Payed OR d.Active <> s.Active);
 PRINT CONCAT('  -> ', @@ROWCOUNT, ' imported debts state-synced (paid/storno).');
 
