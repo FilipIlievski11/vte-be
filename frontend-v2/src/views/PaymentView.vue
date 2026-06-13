@@ -31,6 +31,24 @@ async function load() {
 }
 onMounted(load);
 
+const payingSeq = ref<number | null>(null);
+async function payInstallment(seq: number) {
+  payingSeq.value = seq;
+  try {
+    await api.post(`/payment-documents/${props.id}/installments/${seq}/pay`);
+    // fiscal receipt for this rata (quiet — needs the configured folder)
+    const fiscal = await printFiscalForDocument(props.id, false, seq);
+    await load();
+    toast.add({ severity: 'success', summary: t('payments.installmentPaid', { n: seq }),
+      detail: fiscal.status === 'printed' ? t('fiscal.printedOk') : undefined, life: 3000 });
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('payments.installmentPayFailed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 4500 });
+  } finally {
+    payingSeq.value = null;
+  }
+}
+
 const fiscalBusy = ref(false);
 async function printFiscal() {
   fiscalBusy.value = true;
@@ -254,6 +272,13 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
                 :value="data.paid ? t('payments.status.paid') : t('payments.status.unpaid')"
                 :severity="data.paid ? 'success' : 'warn'"
               />
+            </template>
+          </Column>
+          <Column :header="''" style="width:120px">
+            <template #body="{ data }">
+              <Button v-if="!data.paid && !bill.stornoed"
+                :label="t('payments.payInstallment')" icon="pi pi-check" size="small"
+                :loading="payingSeq === data.sequenceNo" @click="payInstallment(data.sequenceNo)" />
             </template>
           </Column>
         </DataTable>

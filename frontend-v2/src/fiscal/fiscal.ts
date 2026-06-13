@@ -115,14 +115,20 @@ export type FiscalPrintResult =
   | { status: 'unsupported' }                  // browser without File System Access API
   | { status: 'error'; message: string };
 
-/** Full receipt flow: fetch composed file → write to folder → confirm outbox. */
-export async function printFiscalForDocument(documentId: number | string, interactive = true): Promise<FiscalPrintResult> {
+/** Full receipt flow: fetch composed file → write to folder → confirm outbox.
+ *  Pass installmentSeq for a rata ("Uplata po rata") receipt — those don't touch
+ *  the document-level FiscalPrintedAt marker. */
+export async function printFiscalForDocument(
+  documentId: number | string, interactive = true, installmentSeq?: number,
+): Promise<FiscalPrintResult> {
   if (!isFiscalSupported()) return { status: 'unsupported' };
   try {
     const { data } = await api.get<{
       printsFiscal: boolean; skipReason: string | null;
       fileName: string; contentBase64: string; fiscalPrintedAt: string | null;
-    }>(`/payment-documents/${documentId}/fiscal-file`);
+    }>(`/payment-documents/${documentId}/fiscal-file`, {
+      params: installmentSeq != null ? { installment: installmentSeq } : undefined,
+    });
 
     if (!data.printsFiscal) return { status: 'skipped', reason: data.skipReason ?? '' };
 
@@ -130,7 +136,8 @@ export async function printFiscalForDocument(documentId: number | string, intera
     if (!folder) return { status: 'no-folder' };
 
     await writeFiscalFile(folder, data.fileName, base64ToBytes(data.contentBase64));
-    await api.post(`/payment-documents/${documentId}/fiscal-printed`);
+    if (installmentSeq == null)
+      await api.post(`/payment-documents/${documentId}/fiscal-printed`);
     return { status: 'printed', fileName: data.fileName };
   } catch (e: any) {
     return { status: 'error', message: e?.response?.data?.error ?? e?.message ?? String(e) };

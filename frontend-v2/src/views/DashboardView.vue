@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink, useRouter } from 'vue-router';
 import { api } from '@/api/client';
@@ -13,6 +13,8 @@ import type { TreeNode } from 'primevue/treenode';
 import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
+import InputNumber from 'primevue/inputnumber';
+import InputText from 'primevue/inputtext';
 import { printFiscalForDocument } from '@/fiscal/fiscal';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
@@ -120,6 +122,18 @@ const billSaving = ref(false);
 interface PaymentTypeOpt { id: number; name: string; isCash: boolean; isInstallment: boolean; prefix: string | null }
 const paymentTypes = ref<PaymentTypeOpt[]>([]);
 
+// installment ("по договор") fields
+const selectedBillType = computed(() => paymentTypes.value.find(x => x.id === billTypeId.value) ?? null);
+const billInstallments = ref(2);
+const billFirstAmount = ref<number | null>(null);
+const billGuarantorName = ref('');
+const billGuarantorAddress = ref('');
+const billGuarantorEmbg = ref('');
+watch([billTypeId, billDialogVisible], () => {
+  if (selectedBillType.value?.isInstallment && billFirstAmount.value == null)
+    billFirstAmount.value = Math.round(selectedTotal.value / 2);
+});
+
 /** Distinct relation ids among the selected debt rows — a bill covers exactly one. */
 const selectedRelationIds = computed(() => {
   const s = new Set<number>();
@@ -138,30 +152,48 @@ async function openBillDialog() {
   if (paymentTypes.value.length === 0) {
     try {
       const { data } = await api.get<PaymentTypeOpt[]>('/payment-documents/payment-types', { params: { usedOnly: true } });
-      paymentTypes.value = data.filter(x => !x.isInstallment);
+      paymentTypes.value = data;          // includes installment ("по договор") now
     } catch { /* dropdown stays empty; dialog still opens */ }
   }
   // default: cash ("во готово" — the un-prefixed cash type)
   billTypeId.value = paymentTypes.value.find(x => x.isCash && !x.prefix)?.id
     ?? paymentTypes.value.find(x => x.isCash)?.id
     ?? paymentTypes.value[0]?.id ?? null;
+  // reset installment fields
+  billInstallments.value = 2;
+  billFirstAmount.value = null;
+  billGuarantorName.value = '';
+  billGuarantorAddress.value = '';
+  billGuarantorEmbg.value = '';
   billDialogVisible.value = true;
 }
 
 async function createBill() {
   if (!billTypeId.value) return;
+  const isRati = selectedBillType.value?.isInstallment === true;
   billSaving.value = true;
   try {
     const { data } = await api.post<{ id: number; documentNumber: string; linesTotal: number; lines: number }>(
       '/payment-documents/from-debts',
-      { debtIds: [...selectedDebtIds.value], paymentTypeId: billTypeId.value });
+      {
+        debtIds: [...selectedDebtIds.value],
+        paymentTypeId: billTypeId.value,
+        ...(isRati ? {
+          installments: billInstallments.value,
+          firstInstallmentAmount: billFirstAmount.value,
+          guarantorName: billGuarantorName.value || null,
+          guarantorAddress: billGuarantorAddress.value || null,
+          guarantorEmbg: billGuarantorEmbg.value || null,
+        } : {}),
+      });
     billDialogVisible.value = false;
     selectedDebtIds.value = new Set();
     await refreshDebts();
     toast.add({ severity: 'success', summary: t('dashboard.naplata.billCreated', { no: data.documentNumber }), life: 3500 });
-    // Legacy parity: fiscal receipt prints right after the bill is saved. Quiet
-    // attempt (no permission prompts mid-flow); the bill page has a manual button.
-    const fiscal = await printFiscalForDocument(data.id, false);
+    // Legacy parity: fiscal receipt prints right after the bill is saved (for
+    // installment bills, the down payment — rata 1). Quiet attempt; the bill
+    // page has a manual button.
+    const fiscal = await printFiscalForDocument(data.id, false, isRati ? 1 : undefined);
     if (fiscal.status === 'printed')
       toast.add({ severity: 'success', summary: t('fiscal.printedOk'), life: 2500 });
     else if (fiscal.status === 'no-folder' || fiscal.status === 'error')
@@ -478,7 +510,7 @@ onMounted(async () => {
 
   <!-- Направи сметка dialog -->
   <Dialog v-model:visible="billDialogVisible" :header="t('dashboard.naplata.makeBillTitle')"
-    :modal="true" :style="{ width: '26rem' }">
+    :modal="true" :style="{ width: selectedBillType?.isInstallment ? '32rem' : '26rem' }">
     <div class="bill-form">
       <div class="bill-row">
         <span class="muted">{{ t('dashboard.naplata.billItems') }}</span>
@@ -493,6 +525,40 @@ onMounted(async () => {
         <Select v-model="billTypeId" :options="paymentTypes"
           optionLabel="name" optionValue="id" class="bill-type-select" />
       </div>
+
+      <!-- Installment ("по договор") fields -->
+      <template v-if="selectedBillType?.isInstallment">
+        <div class="bill-divider">{{ t('dashboard.naplata.rati.section') }}</div>
+        <div class="bill-grid2">
+          <div class="bill-field">
+            <label>{{ t('dashboard.naplata.rati.count') }}</label>
+            <InputNumber v-model="billInstallments" :min="2" :max="36" showButtons />
+          </div>
+          <div class="bill-field">
+            <label>{{ t('dashboard.naplata.rati.firstAmount') }}</label>
+            <InputNumber v-model="billFirstAmount" :min="1" :max="selectedTotal" :maxFractionDigits="0"
+              suffix=" ден." />
+          </div>
+        </div>
+        <div v-if="billFirstAmount" class="bill-row rati-hint">
+          <span class="muted">{{ t('dashboard.naplata.rati.remaining') }}</span>
+          <span class="mono">{{ fmtMoney(selectedTotal - billFirstAmount) }} ({{ billInstallments - 1 }}×)</span>
+        </div>
+        <div class="bill-field">
+          <label>{{ t('dashboard.naplata.rati.guarantor') }}</label>
+          <InputText v-model="billGuarantorName" :placeholder="t('dashboard.naplata.rati.guarantorName')" />
+        </div>
+        <div class="bill-grid2">
+          <div class="bill-field">
+            <label>{{ t('dashboard.naplata.rati.guarantorEmbg') }}</label>
+            <InputText v-model="billGuarantorEmbg" />
+          </div>
+          <div class="bill-field">
+            <label>{{ t('dashboard.naplata.rati.guarantorAddress') }}</label>
+            <InputText v-model="billGuarantorAddress" />
+          </div>
+        </div>
+      </template>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" severity="secondary" outlined :disabled="billSaving"
@@ -602,6 +668,12 @@ onMounted(async () => {
 .bill-field { display: flex; flex-direction: column; gap: .3rem; margin-top: .4rem }
 .bill-field label { font-size: .8rem; color: var(--p-text-muted-color) }
 .bill-type-select { width: 100% }
+.bill-field :deep(.p-inputnumber), .bill-field :deep(.p-inputnumber-input),
+.bill-field :deep(.p-inputtext) { width: 100% }
+.bill-divider { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--p-content-border-color);
+  font-size: .78rem; font-weight: 600; color: var(--p-text-muted-color); text-transform: uppercase; letter-spacing: .02em }
+.bill-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem }
+.rati-hint { font-size: .82rem; margin-top: -.1rem }
 .grp-row.selected { background: var(--p-highlight-background, rgba(37, 99, 235, .06)) }
 /* Shrink PrimeVue Checkbox to fit our 1.1rem column */
 .naplata :deep(.p-checkbox), .naplata :deep(.p-checkbox-box) { width: .95rem; height: .95rem }

@@ -323,7 +323,13 @@ public class PaymentDocumentsController : ControllerBase
         IReadOnlyList<long> DebtIds,
         int PaymentTypeId,
         string? Note,
-        DateTime? DueDate);
+        DateTime? DueDate,
+        // installment ("по договор") fields — required when the type IsInstallment
+        int? Installments = null,
+        decimal? FirstInstallmentAmount = null,
+        string? GuarantorName = null,
+        string? GuarantorAddress = null,
+        string? GuarantorEmbg = null);
 
     public record CreateBillResponse(long Id, string DocumentNumber, decimal LinesTotal, int Lines);
 
@@ -346,8 +352,6 @@ public class PaymentDocumentsController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == req.PaymentTypeId && t.Active);
         if (type == null)
             return BadRequest(new { error = "Непостоечки начин на плаќање." });
-        if (type.IsInstallment)
-            return BadRequest(new { error = "Плаќање на рати (по договор) сè уште не е поддржано." });
 
         var debts = await _db.CustomerDebts
             .Where(d => req.DebtIds.Contains(d.Id))
@@ -379,6 +383,17 @@ public class PaymentDocumentsController : ControllerBase
         ).ToDictionaryAsync(x => x.Id, x => x.Percent ?? 0d);
 
         var now = DateTime.UtcNow;
+
+        // Installment ("по договор") validation — legacy flow: the first installment is a
+        // down payment collected on the spot; the remainder splits monthly over the rest.
+        var billTotal = debts.Sum(d => Math.Round(d.Price, 0, MidpointRounding.ToEven));
+        if (type.IsInstallment)
+        {
+            if (req.Installments is not (>= 2 and <= 36))
+                return BadRequest(new { error = "Бројот на рати мора да биде помеѓу 2 и 36." });
+            if (req.FirstInstallmentAmount is not > 0 || req.FirstInstallmentAmount >= billTotal)
+                return BadRequest(new { error = "Првата рата мора да биде поголема од 0 и помала од вкупниот износ." });
+        }
 
         // Serializable so two simultaneous bills can't draw the same sequence number.
         await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
@@ -439,11 +454,92 @@ public class PaymentDocumentsController : ControllerBase
             debt.SettledByLineId = line.Id;
         }
         await _db.SaveChangesAsync();
+
+        // Installment agreement + schedule (legacy DogovorZaRati + PaymentDocumentsRata).
+        // Rata 1 = the down payment, settled immediately; the remainder splits into equal
+        // whole-denar monthly installments, the last one absorbing the rounding remainder.
+        if (type.IsInstallment)
+        {
+            var agreement = new InstallmentAgreement
+            {
+                CompanyId = companyId,
+                Number = $"{seq}{yearSuffix}",
+                Date = DateOnly.FromDateTime(now),
+                TotalInstallments = req.Installments!.Value,
+                GuarantorName = Trimmed(req.GuarantorName),
+                GuarantorAddress = Trimmed(req.GuarantorAddress),
+                GuarantorEmbg = Trimmed(req.GuarantorEmbg),
+            };
+            _db.InstallmentAgreements.Add(agreement);
+            await _db.SaveChangesAsync();
+
+            doc.AgreementId = agreement.Id;
+            doc.Paid = false;
+
+            var n = req.Installments.Value;
+            var first = Math.Round(req.FirstInstallmentAmount!.Value, 0, MidpointRounding.ToEven);
+            var remainder = billTotal - first;
+            var per = Math.Floor(remainder / (n - 1));
+            var today = DateOnly.FromDateTime(now);
+
+            var schedule = new List<InstallmentSchedule>
+            {
+                new()
+                {
+                    CompanyId = companyId, PaymentDocumentId = doc.Id, SequenceNo = 1,
+                    Amount = first, DueDate = today,
+                    Paid = true, PaidAt = now, PaidAmount = first,
+                    OrganizationId = organizationId,
+                },
+            };
+            for (var i = 2; i <= n; i++)
+            {
+                var amount = i == n ? remainder - per * (n - 2) : per;
+                schedule.Add(new InstallmentSchedule
+                {
+                    CompanyId = companyId, PaymentDocumentId = doc.Id, SequenceNo = i,
+                    Amount = amount, DueDate = today.AddMonths(i - 1),
+                });
+            }
+            _db.InstallmentSchedules.AddRange(schedule);
+            doc.DueDate = schedule[^1].DueDate!.Value.ToDateTime(TimeOnly.MinValue);
+            await _db.SaveChangesAsync();
+        }
+
         await tx.CommitAsync();
 
         var total = lines.Sum(l => l.UnitPrice * l.Quantity);
         return CreatedAtAction(nameof(Get), new { id = doc.Id },
             new CreateBillResponse(doc.Id, doc.DocumentNumber, total, lines.Count));
+    }
+
+    private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>Settle one scheduled installment (legacy "плати рата"). When the last
+    /// open installment closes, the master document flips to Paid.</summary>
+    [HttpPost("{id:long}/installments/{seq:int}/pay")]
+    public async Task<ActionResult<object>> PayInstallment(long id, int seq)
+    {
+        var doc = await _db.PaymentDocuments.FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+        if (doc.Stornoed) return BadRequest(new { error = "Сметката е сторнирана." });
+
+        var rata = await _db.InstallmentSchedules
+            .FirstOrDefaultAsync(s => s.PaymentDocumentId == id && s.SequenceNo == seq && s.Active);
+        if (rata == null) return NotFound();
+        if (rata.Paid) return BadRequest(new { error = "Оваа рата е веќе платена." });
+
+        rata.Paid = true;
+        rata.PaidAt = DateTime.UtcNow;
+        rata.PaidAmount = rata.Amount;
+        rata.OrganizationId ??= doc.OrganizationId;
+
+        var stillOpen = await _db.InstallmentSchedules
+            .CountAsync(s => s.PaymentDocumentId == id && s.Active && !s.Paid && s.Id != rata.Id);
+        if (stillOpen == 0) doc.Paid = true;
+
+        await _db.SaveChangesAsync();
+        return Ok(new { documentPaid = doc.Paid, paidAt = rata.PaidAt });
     }
 
     // ---- Fiscal printing (Accent PF-500, file-exchange protocol) ----
@@ -461,10 +557,36 @@ public class PaymentDocumentsController : ControllerBase
         DateTime? FiscalPrintedAt);
 
     [HttpGet("{id:long}/fiscal-file")]
-    public async Task<ActionResult<FiscalFileDto>> FiscalFile(long id)
+    public async Task<ActionResult<FiscalFileDto>> FiscalFile(long id, [FromQuery] int? installment = null)
     {
         var doc = await _db.PaymentDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         if (doc == null) return NotFound();
+
+        // Installment receipt (legacy PecatiFiskalnaSmetaZaRataAccentPF500): a single
+        // "Uplata po rata" line at 0% VAT for the paid amount of that installment.
+        if (installment.HasValue)
+        {
+            var rata = await _db.InstallmentSchedules.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.PaymentDocumentId == id && s.SequenceNo == installment.Value && s.Active);
+            if (rata == null) return NotFound();
+            if (!rata.Paid)
+                return Ok(new FiscalFileDto(false, "Ратата не е платена — нема што да се фискализира.", "", "", doc.FiscalPrintedAt));
+
+            var rsb = new System.Text.StringBuilder();
+            rsb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
+            rsb.Append("'1").Append("Uplata po rata").Append('\t').Append((char)194)
+               .Append(((double)(rata.PaidAmount ?? rata.Amount)).ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+               .Append("\r\n");
+            rsb.Append(" 5 Smetka\t\r\n");
+            rsb.Append(doc.Stornoed ? "%V" : "%8").Append("\r\n");
+
+            var rtext = rsb.ToString();
+            var rbytes = new byte[rtext.Length];
+            for (var i = 0; i < rtext.Length; i++) rbytes[i] = (byte)rtext[i];
+            return Ok(new FiscalFileDto(true, null,
+                $"smetkaID{doc.Id}rata{installment.Value}.txt",
+                Convert.ToBase64String(rbytes), doc.FiscalPrintedAt));
+        }
 
         var type = await _db.PaymentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == doc.PaymentTypeId);
         // Legacy gate: only Fiskalna_kes (cash) payment types print a fiscal receipt.
@@ -575,20 +697,42 @@ public class PaymentDocumentsController : ControllerBase
     public record PaymentTypeDto(int Id, string? Code, string Name, bool IsCash, bool IsCard, bool IsInstallment, bool PrintsReceipt, bool PrintsInvoice, string? Prefix);
     public record VatRateDto(int Id, string? Code, string Name, double Percent);
 
-    /// <summary>Payment types. The legacy table repeats each type once per company with
-    /// no company column, so <paramref name="usedOnly"/>=true narrows to the ids this
-    /// tenant has actually billed with — picking a sibling duplicate would silently
-    /// start a separate document-number sequence.</summary>
+    /// <summary>Payment types. The legacy table repeats each type once per company (no
+    /// company column — just duplicated rows, and the same fee can carry a different
+    /// doc-number Prefix per company), so <paramref name="usedOnly"/>=true keeps, per
+    /// type NAME, only the id whose MOST RECENT bill is newest — i.e. the one the station
+    /// is currently billing with. Grouping by Name alone (not Name+Prefix) is deliberate:
+    /// "по договор" exists under several prefixes across companies and must collapse to a
+    /// single choice. Most-recent beats most-total: an id can have more lifetime docs yet
+    /// have been retired years ago (seen with "кредитна" 19 vs 24, "по договор" 18 vs 23).</summary>
     [HttpGet("payment-types")]
     public async Task<ActionResult<IReadOnlyList<PaymentTypeDto>>> PaymentTypes([FromQuery] bool usedOnly = false)
     {
         var q = _db.PaymentTypes.AsNoTracking().Where(p => p.Active);
-        if (usedOnly)
-            q = q.Where(p => _db.PaymentDocuments.Any(d => d.PaymentTypeId == p.Id));
-        return Ok(await q
+        if (!usedOnly)
+            return Ok(await q.OrderBy(p => p.Name)
+                .Select(p => new PaymentTypeDto(p.Id, p.Code, p.Name, p.IsCash, p.IsCard, p.IsInstallment, p.PrintsReceipt, p.PrintsInvoice, p.Prefix))
+                .ToListAsync());
+
+        var withRecency = await q
+            .Select(p => new
+            {
+                Type = p,
+                LastDocId = _db.PaymentDocuments
+                    .Where(d => d.PaymentTypeId == p.Id)
+                    .Max(d => (long?)d.Id),
+            })
+            .Where(x => x.LastDocId != null)
+            .ToListAsync();
+
+        var deduped = withRecency
+            .GroupBy(x => (x.Type.Name ?? "").Trim())   // legacy names carry stray leading spaces
+            .Select(g => g.OrderByDescending(x => x.LastDocId).First().Type)
             .OrderBy(p => p.Name)
             .Select(p => new PaymentTypeDto(p.Id, p.Code, p.Name, p.IsCash, p.IsCard, p.IsInstallment, p.PrintsReceipt, p.PrintsInvoice, p.Prefix))
-            .ToListAsync());
+            .ToList();
+
+        return Ok(deduped);
     }
 
     [HttpGet("vat-rates")]
