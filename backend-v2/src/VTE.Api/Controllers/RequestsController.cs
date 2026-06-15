@@ -5,6 +5,7 @@ using VTE.Api.Dtos;
 using VTE.Domain.Identity;
 using VTE.Domain.Payments;
 using VTE.Domain.Requests;
+using VTE.Domain.TechnicalExams;
 using VTE.Infrastructure.Persistence;
 using VTE.Infrastructure.Pricing;
 using VTE.Infrastructure.Tenancy;
@@ -19,12 +20,14 @@ public class RequestsController : ControllerBase
     private readonly VteDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IDebtService _debts;
+    private readonly IConfiguration _config;
 
-    public RequestsController(VteDbContext db, ITenantContext tenant, IDebtService debts)
+    public RequestsController(VteDbContext db, ITenantContext tenant, IDebtService debts, IConfiguration config)
     {
         _db = db;
         _tenant = tenant;
         _debts = debts;
+        _config = config;
     }
 
     /// <summary>
@@ -293,6 +296,13 @@ public class RequestsController : ControllerBase
         _db.Requests.Add(entity);
         await _db.SaveChangesAsync();
 
+        // Legacy parity (uxRequestEdit.vb:173-195): auto-create the technical-exam stub for
+        // renewal/first-registration/tech-exam request types. Runs BEFORE the request-fee debt
+        // block so that block inherits the new exam's organization (was 0 before). Best-effort
+        // like the debt hook — a failure here never rolls back the request.
+        try { await TryAutoCreateExamAsync(entity, type); }
+        catch { /* swallow — see TryAutoCreateExamAsync remarks */ }
+
         // Phase 3: auto-debt creation — mirrors legacy AddDeptsToCustomer (Request.vb:721,840-971).
         // Fires only on Insert (legacy DataPortal_Insert), not Update — matching legacy.
         try
@@ -351,6 +361,98 @@ public class RequestsController : ControllerBase
         }
 
         return await Get(entity.Id);
+    }
+
+    /// <summary>
+    /// Legacy "auto technical exam on request save" (uxRequestEdit.vb:173-195). When a renewal /
+    /// first-registration / tech-exam request type is created, the legacy app auto-created a
+    /// passing technical-exam stub (the operator fills the details later) and back-linked it to
+    /// the request; the exam's own save generated the exam-fee debt.
+    ///
+    /// v2 port:
+    ///   • Gate (legacy `objCurentTehExamOrganization.AutmateProceses`) → config flag
+    ///     <c>Requests:AutoCreateTechExam</c>.
+    ///   • Gate (legacy `IsTehnicalExamRequired &gt; 0`) → the migrated
+    ///     <see cref="RequestType.TechnicalExamRequirement"/> column carries the legacy
+    ///     IsTehnicalExamRequired value, which IS the exam-type id (0 = none). We read it as an int.
+    ///   • Gate (legacy `IdTechnicalExamReport = 0`) → only when the request has no exam linked yet.
+    ///   • No "skip if a recent valid exam exists" check — legacy has none.
+    /// </summary>
+    private async Task TryAutoCreateExamAsync(Request entity, RequestType type)
+    {
+        if (!_config.GetValue("Requests:AutoCreateTechExam", false)) return;
+        if (entity.TechnicalExamReportId.HasValue) return;                 // legacy IdTechnicalExamReport = 0 guard
+
+        var carriedTypeId = (int)type.TechnicalExamRequirement;            // migrated column = legacy exam-type id
+        if (carriedTypeId <= 0) return;                                    // legacy IsTehnicalExamRequired > 0 guard
+
+        // Resolve the exam type: prefer the value the request type carries; fall back to the
+        // configured default when that id is unknown (don't guess a type that doesn't exist).
+        var typeId = await _db.TechnicalExamTypes.AnyAsync(t => t.Id == carriedTypeId)
+            ? carriedTypeId
+            : _config.GetValue("Requests:DefaultTechnicalExamTypeId", 1);
+        if (!await _db.TechnicalExamTypes.AnyAsync(t => t.Id == typeId)) return;
+
+        // The request path has no station context (legacy used the operator's current org);
+        // resolve from configuration. Must be a real organization for the FK + RegNumber.
+        var orgId = _config.GetValue("Requests:DefaultTechnicalExamOrganizationId", 0);
+        if (orgId <= 0 || !await _db.TechnicalExamOrganizations.AnyAsync(o => o.Id == orgId)) return;
+
+        // Anchor to the NEW owner on ownership transfer, else the current relation
+        // (uxRequestEdit.vb:180-184 — identical to the request-fee debt routing below).
+        var relationId = (type.TransfersOwnership && entity.NewClientVehicleRelationId.HasValue)
+            ? entity.NewClientVehicleRelationId.Value
+            : entity.ClientVehicleRelationId;
+
+        var validDays = await _db.TechnicalExamTypes.Where(t => t.Id == typeId).Select(t => t.ValidDays).FirstAsync();
+        var madeDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var validTill = madeDate.AddDays(validDays > 0 ? validDays : 365);
+
+        // RegNumber = {org}-{seq}/{year}; continues the org's sequence (mirror of
+        // TechnicalExamReportsController.Create:655-666 — same format, same sequence space).
+        var prefix = $"{orgId}-";
+        var lastRn = await _db.TechnicalExamReports.AsNoTracking()
+            .Where(r => r.OrganizationId == orgId && r.RegNumber != null && r.RegNumber.StartsWith(prefix))
+            .OrderByDescending(r => r.Id).Select(r => r.RegNumber).FirstOrDefaultAsync();
+        int seq = 1;
+        if (lastRn != null)
+        {
+            int dash = lastRn.IndexOf('-'), slash = lastRn.IndexOf('/');
+            if (dash >= 0 && slash > dash && int.TryParse(lastRn.Substring(dash + 1, slash - dash - 1), out var n)) seq = n + 1;
+        }
+        var regNumber = $"{orgId}-{seq}/{DateTime.UtcNow.Year}";
+
+        var exam = new TechnicalExamReport
+        {
+            CompanyId = entity.CompanyId,
+            CustomerVehicleRelationId = relationId,
+            TechnicalExamTypeId = typeId,
+            OrganizationId = orgId,
+            RegNumber = regNumber,
+            MadeDate = madeDate,
+            ValidTillDate = validTill,
+            FirstControllerLegacyId = int.TryParse(_tenant.UserId, out var uid) ? uid : null,
+            VehicleIsRight = true,                                          // legacy auto-exam defaults to pass
+            Active = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.TechnicalExamReports.Add(exam);
+        await _db.SaveChangesAsync();
+
+        entity.TechnicalExamReportId = exam.Id;                            // back-link (uxRequestEdit.vb:193)
+        await _db.SaveChangesAsync();
+
+        // Exam-fee debt — identical to TechnicalExamReportsController.Create:711-723
+        // (the v2 equivalent of legacy insertFinancialStatePriceCatalogForTehnicalExams).
+        var isIrregular = typeId > 1;                                      // legacy: type 1 is the regular РЕД-12М
+        await _debts.CreateDebtsForSourceAsync(
+            origin:                     isIrregular ? DebtOrigin.TechnicalExamIrregular : DebtOrigin.TechnicalExam,
+            originId:                   exam.Id,
+            customerVehicleRelationId:  relationId,
+            organizationId:             orgId,
+            trigger:                    isIrregular ? PriceTrigger.TechnicalExamIrregular : PriceTrigger.TechnicalExam,
+            communityId:                null,
+            note:                       $"технички преглед бр. {regNumber}");
     }
 
     [HttpPut("{id:long}")]
