@@ -299,6 +299,12 @@ export default {
       proofTypeRequired: 'Изберете вид доказ',
       attachmentMissing: 'Изберете вид и датотека пред да испратите',
       attachmentUploaded: 'Датотеката е прикачена',
+      attachedDocs: 'Приложени документи',
+      ownershipDocTitle: 'Доказ за потеклото на возилото',
+      paymentDocTitle: 'Потврда за платени давачки',
+      number: 'Број',
+      addRow: 'Додај ред',
+      docsPartial: 'Барањето е создадено, но дел од документите не се зачувани.',
       ownershipProofs: {
         newTitle: 'Нов доказ за сопственост',
         editTitle: 'Уреди доказ за сопственост',

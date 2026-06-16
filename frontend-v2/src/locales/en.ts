@@ -299,6 +299,12 @@ export default {
       proofTypeRequired: 'Proof type must be selected',
       attachmentMissing: 'Choose a type and a file before uploading',
       attachmentUploaded: 'File uploaded',
+      attachedDocs: 'Attached documents',
+      ownershipDocTitle: 'Proof of vehicle origin',
+      paymentDocTitle: 'Confirmation of paid fees',
+      number: 'Number',
+      addRow: 'Add row',
+      docsPartial: 'Request created, but some documents were not saved.',
       ownershipProofs: {
         newTitle: 'New ownership proof',
         editTitle: 'Edit ownership proof',

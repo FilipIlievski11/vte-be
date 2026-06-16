@@ -15,6 +15,7 @@ import type {
 } from '@/types';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
+import InputText from 'primevue/inputtext';
 import AutoComplete from 'primevue/autocomplete';
 import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
@@ -49,6 +50,20 @@ const attachmentTypes = ref<RequestAttachmentType[]>([]);
 const ownershipProofs = ref<RequestOwnershipProofDto[]>([]);
 const paymentProofs = ref<RequestPaymentProofDto[]>([]);
 const attachments = ref<RequestAttachmentDto[]>([]);
+
+// New-request "Приложени документи": editable rows held in memory until the
+// request is created, then persisted via the proof endpoints. Prepopulated
+// with the legacy defaults (СООБРАЌАЈНА ДОЗВОЛА / СМЕТКА).
+interface PendingProof { proofTypeId: number | null; detail: string }
+const pendingOwnership = ref<PendingProof[]>([]);
+const pendingPayment   = ref<PendingProof[]>([]);
+
+function typeIdByName<T extends { id: number; name: string }>(types: T[], needle: string): number | null {
+  const up = needle.toUpperCase();
+  return types.find(t => (t.name ?? '').toUpperCase().includes(up))?.id ?? types[0]?.id ?? null;
+}
+function addOwnershipRow() { pendingOwnership.value.push({ proofTypeId: typeIdByName(ownershipTypes.value, 'СООБРАЌАЈНА ДОЗВОЛА'), detail: '' }); }
+function addPaymentRow()   { pendingPayment.value.push({ proofTypeId: typeIdByName(paymentTypes.value, 'СМЕТКА'), detail: '' }); }
 
 // Ownership proof dialog state
 const ownershipDialogVisible = ref(false);
@@ -588,6 +603,20 @@ async function save() {
       toast.add({ severity: 'success', summary: t('clients.form.saved'), life: 1500 });
     } else {
       const { data } = await api.post<RequestRead>('/requests', body);
+      // Persist the attached-document rows the operator filled on the new form.
+      try {
+        await Promise.all([
+          ...pendingOwnership.value.filter(p => p.proofTypeId).map(p =>
+            api.post(`/requests/${data.id}/ownership-proofs`,
+              { ownershipProofTypeId: p.proofTypeId, detail: p.detail || null, active: true })),
+          ...pendingPayment.value.filter(p => p.proofTypeId).map(p =>
+            api.post(`/requests/${data.id}/payment-proofs`,
+              { paymentProofTypeId: p.proofTypeId, detail: p.detail || null, active: true })),
+        ]);
+      } catch (pe: any) {
+        toast.add({ severity: 'warn', summary: t('requests.form.created'),
+          detail: t('requests.form.docsPartial'), life: 5000 });
+      }
       toast.add({ severity: 'success', summary: t('requests.form.created'), life: 1500 });
       router.replace(`/requests/${data.id}`);
     }
@@ -634,6 +663,9 @@ onMounted(async () => {
     if (Number.isFinite(pre) && pre > 0 && requestTypes.value.some(rt => rt.id === pre)) {
       requestTypeId.value = pre;
     }
+    // Prepopulate the legacy default attached documents.
+    pendingOwnership.value = [{ proofTypeId: typeIdByName(ownershipTypes.value, 'СООБРАЌАЈНА ДОЗВОЛА'), detail: '' }];
+    pendingPayment.value   = [{ proofTypeId: typeIdByName(paymentTypes.value, 'СМЕТКА'), detail: '' }];
   }
 });
 </script>
@@ -765,6 +797,44 @@ onMounted(async () => {
             :disabled="isReadOnly"
             :placeholder="t('requests.form.pickNewOwner')" />
           <div class="muted small">{{ t('requests.form.newOwnerHint') }}</div>
+        </div>
+      </template>
+    </Card>
+
+    <!-- Attached documents (new-request only — editable rows, legacy defaults) -->
+    <Card v-if="!isEdit" class="card">
+      <template #title>{{ t('requests.form.attachedDocs') }}</template>
+      <template #content>
+        <div class="docs-grid">
+          <!-- Доказ за потеклото на возилото -->
+          <div class="docs-col">
+            <div class="docs-head">
+              <span>{{ t('requests.form.ownershipDocTitle') }}</span>
+              <Button :label="t('requests.form.addRow')" icon="pi pi-plus" text size="small" @click="addOwnershipRow" />
+            </div>
+            <div v-for="(row, i) in pendingOwnership" :key="'own' + i" class="doc-row">
+              <Select v-model="row.proofTypeId" :options="ownershipTypes" optionLabel="name" optionValue="id"
+                filter :placeholder="t('requests.form.proofTypeRequired')" class="doc-type" />
+              <InputText v-model="row.detail" :placeholder="t('requests.form.number')" class="doc-num" />
+              <Button icon="pi pi-times" text severity="danger" size="small" @click="pendingOwnership.splice(i, 1)" v-tooltip.left="t('common.delete')" />
+            </div>
+            <div v-if="!pendingOwnership.length" class="muted small">{{ t('requests.form.ownershipProofs.empty') }}</div>
+          </div>
+
+          <!-- Потврда за платени давачки -->
+          <div class="docs-col">
+            <div class="docs-head">
+              <span>{{ t('requests.form.paymentDocTitle') }}</span>
+              <Button :label="t('requests.form.addRow')" icon="pi pi-plus" text size="small" @click="addPaymentRow" />
+            </div>
+            <div v-for="(row, i) in pendingPayment" :key="'pay' + i" class="doc-row">
+              <Select v-model="row.proofTypeId" :options="paymentTypes" optionLabel="name" optionValue="id"
+                filter :placeholder="t('requests.form.proofTypeRequired')" class="doc-type" />
+              <InputText v-model="row.detail" :placeholder="t('requests.form.number')" class="doc-num" />
+              <Button icon="pi pi-times" text severity="danger" size="small" @click="pendingPayment.splice(i, 1)" v-tooltip.left="t('common.delete')" />
+            </div>
+            <div v-if="!pendingPayment.length" class="muted small">{{ t('requests.form.paymentProofs.empty') }}</div>
+          </div>
         </div>
       </template>
     </Card>
@@ -1015,6 +1085,14 @@ onMounted(async () => {
 .ac-opt { display: flex; flex-direction: column; line-height: 1.25 }
 .ac-main { font-size: .85rem }
 .ac-sub { font-size: .75rem; color: var(--p-text-muted-color) }
+
+/* Attached-documents two-column grid (legacy "Приложени документи") */
+.docs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem }
+.docs-col { display: flex; flex-direction: column; gap: .5rem }
+.docs-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+.doc-row { display: grid; grid-template-columns: 1fr 8rem auto; gap: .4rem; align-items: center }
+.doc-type, .doc-num { width: 100% }
+@media (max-width: 720px) { .docs-grid { grid-template-columns: 1fr } }
 @media (max-width: 720px) {
   .anchor-row { grid-template-columns: 1fr auto auto; }
   .anchor-row > label { grid-column: 1 / -1; margin-bottom: -.2rem }
