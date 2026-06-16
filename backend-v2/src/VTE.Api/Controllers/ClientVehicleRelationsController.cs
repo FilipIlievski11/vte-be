@@ -18,7 +18,7 @@ public class ClientVehicleRelationsController : ControllerBase
     public record RelationDto(
         long Id, long ClientId, long? VehicleId,
         byte RelationTypeId, string? RelationTypeName,
-        string? ClientDisplayName,
+        string? ClientDisplayName, string? ClientMb,
         string? VehicleVin, string? VehiclePlate,
         string? VehicleMaker, string? VehicleModel,
         DateTime StartDate, DateTime? EndDate,
@@ -33,14 +33,63 @@ public class ClientVehicleRelationsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<RelationDto>>> List(
         [FromQuery] long? vehicleId = null,
         [FromQuery] long? clientId = null,
-        [FromQuery] bool? activeOnly = null)
+        [FromQuery] bool? activeOnly = null,
+        [FromQuery] string? q = null)
     {
-        var q = _db.ClientVehicleRelations.AsNoTracking().AsQueryable();
-        if (vehicleId.HasValue) q = q.Where(r => r.VehicleId == vehicleId.Value);
-        if (clientId.HasValue)  q = q.Where(r => r.ClientId  == clientId.Value);
-        if (activeOnly == true) q = q.Where(r => r.Active);
+        var query = _db.ClientVehicleRelations.AsNoTracking().AsQueryable();
+        if (vehicleId.HasValue) query = query.Where(r => r.VehicleId == vehicleId.Value);
+        if (clientId.HasValue)  query = query.Where(r => r.ClientId  == clientId.Value);
+        if (activeOnly == true) query = query.Where(r => r.Active);
 
-        var rows = await q.OrderByDescending(r => r.StartDate).Take(500).ToListAsync();
+        // Free-text search powering the New Request "find vehicle" picker: one
+        // input matches the client (name parts / EMBG) and the vehicle (VIN /
+        // plate / maker / model). Mirrors VehiclesController — precompute the
+        // union of matching RelationIds in small indexable queries, then one IN.
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = $"%{q.Trim()}%";
+
+            var hitByVehicleText = _db.ClientVehicleRelations.AsNoTracking()
+                .Where(r => r.VehicleId != null)
+                .Join(_db.Vehicles.AsNoTracking()
+                          .Where(v => EF.Functions.Like(v.Vin, like) ||
+                                      (v.Plate != null && EF.Functions.Like(v.Plate, like))),
+                      r => r.VehicleId!.Value, v => v.Id, (r, v) => r.Id);
+
+            var matchingModelIds =
+                _db.VehicleModels.AsNoTracking()
+                    .Where(m => EF.Functions.Like(m.Name, like))
+                    .Select(m => m.Id)
+                .Union(
+                    from m in _db.VehicleModels.AsNoTracking()
+                    join mk in _db.VehicleMakers.AsNoTracking() on m.MakerId equals mk.Id
+                    where EF.Functions.Like(mk.Name, like)
+                    select m.Id);
+            var hitByVehicleModel = _db.ClientVehicleRelations.AsNoTracking()
+                .Where(r => r.VehicleId != null)
+                .Join(_db.Vehicles.AsNoTracking()
+                          .Where(v => v.ModelId.HasValue && matchingModelIds.Contains(v.ModelId.Value)),
+                      r => r.VehicleId!.Value, v => v.Id, (r, v) => r.Id);
+
+            var clientHitIds = _db.Clients.AsNoTracking()
+                .Where(c =>
+                    (c.FirstName  != null && EF.Functions.Like(c.FirstName,  like)) ||
+                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, like)) ||
+                    (c.LastName   != null && EF.Functions.Like(c.LastName,   like)) ||
+                    (c.MB         != null && EF.Functions.Like(c.MB,         like)))
+                .Select(c => c.Id);
+            var hitByClient = _db.ClientVehicleRelations.AsNoTracking()
+                .Where(r => clientHitIds.Contains(r.ClientId))
+                .Select(r => r.Id);
+
+            var hitRelationIds = hitByVehicleText.Union(hitByVehicleModel).Union(hitByClient);
+            query = query.Where(r => hitRelationIds.Contains(r.Id));
+        }
+
+        // Autocomplete needs only a short list; unfiltered callers (form pickers)
+        // still expect the full set.
+        var take = string.IsNullOrWhiteSpace(q) ? 500 : 25;
+        var rows = await query.OrderByDescending(r => r.StartDate).Take(take).ToListAsync();
 
         var typeIds   = rows.Select(r => r.RelationTypeId).Distinct().ToList();
         var clientIds = rows.Select(r => r.ClientId).Distinct().ToList();
@@ -50,7 +99,7 @@ public class ClientVehicleRelationsController : ControllerBase
             .Where(t => typeIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name);
         var clients = await _db.Clients.AsNoTracking()
             .Where(c => clientIds.Contains(c.Id))
-            .Select(c => new { c.Id, c.FirstName, c.MiddleName, c.LastName })
+            .Select(c => new { c.Id, c.FirstName, c.MiddleName, c.LastName, c.MB })
             .ToDictionaryAsync(c => c.Id);
         var vehicles = await _db.Vehicles.AsNoTracking()
             .Where(v => vIds.Contains(v.Id))
@@ -74,6 +123,7 @@ public class ClientVehicleRelationsController : ControllerBase
                 .Where(p => !string.IsNullOrWhiteSpace(p));
             return string.Join(' ', parts);
         }
+        string? clientMb(long cid) => clients.TryGetValue(cid, out var c) ? c.MB : null;
 
         return Ok(rows.Select(r =>
         {
@@ -91,7 +141,7 @@ public class ClientVehicleRelationsController : ControllerBase
             return new RelationDto(
                 r.Id, r.ClientId, r.VehicleId,
                 r.RelationTypeId, types.GetValueOrDefault(r.RelationTypeId),
-                joinName(r.ClientId),
+                joinName(r.ClientId), clientMb(r.ClientId),
                 vin, plate, makerName, modelName,
                 r.StartDate, r.EndDate, r.StartNote, r.EndNote, r.Active);
         }).ToList());
@@ -108,11 +158,12 @@ public class ClientVehicleRelationsController : ControllerBase
 
         var client = await _db.Clients.AsNoTracking()
             .Where(c => c.Id == r.ClientId)
-            .Select(c => new { c.FirstName, c.MiddleName, c.LastName })
+            .Select(c => new { c.FirstName, c.MiddleName, c.LastName, c.MB })
             .FirstOrDefaultAsync();
         var clientName = client == null ? null
             : string.Join(' ', new[] { client.FirstName, client.MiddleName, client.LastName }
                 .Where(x => !string.IsNullOrWhiteSpace(x)));
+        var clientMb = client?.MB;
 
         string? vin = null, plate = null, makerName = null, modelName = null;
         if (r.VehicleId.HasValue)
@@ -143,7 +194,7 @@ public class ClientVehicleRelationsController : ControllerBase
         }
 
         return Ok(new RelationDto(r.Id, r.ClientId, r.VehicleId, r.RelationTypeId, typeName,
-            clientName, vin, plate, makerName, modelName,
+            clientName, clientMb, vin, plate, makerName, modelName,
             r.StartDate, r.EndDate, r.StartNote, r.EndNote, r.Active));
     }
 
@@ -169,7 +220,7 @@ public class ClientVehicleRelationsController : ControllerBase
         _db.ClientVehicleRelations.Add(r);
         await _db.SaveChangesAsync();
         return Ok(new RelationDto(r.Id, r.ClientId, r.VehicleId, r.RelationTypeId, null,
-            null, null, null, null, null, r.StartDate, r.EndDate, r.StartNote, r.EndNote, r.Active));
+            null, null, null, null, null, null, r.StartDate, r.EndDate, r.StartNote, r.EndNote, r.Active));
     }
 
     [HttpPut("{id:long}")]

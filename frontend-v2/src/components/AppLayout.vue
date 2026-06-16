@@ -70,6 +70,13 @@ onMounted(applyTheme);
 watch(darkMode, applyTheme);
 
 // Sidebar collapse
+// Global "back" — operators kept getting stranded on detail/form pages.
+const canGoBack = computed(() => route.path !== '/' && route.path !== '/dashboard');
+function goBack() {
+  if (window.history.length > 1) router.back();
+  else router.push('/dashboard');
+}
+
 const sidebarCollapsed = ref<boolean>(localStorage.getItem('vte.v2.sidebar') === 'collapsed');
 watch(sidebarCollapsed, v => { localStorage.setItem('vte.v2.sidebar', v ? 'collapsed' : 'open'); });
 
@@ -193,6 +200,14 @@ async function logout() {
           :icon="sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'"
           @click="sidebarCollapsed = !sidebarCollapsed"
           v-tooltip.bottom="sidebarCollapsed ? t('app.showSidebar') : t('app.hideSidebar')"
+        />
+        <Button
+          v-if="canGoBack"
+          class="back-btn"
+          severity="secondary" outlined size="small"
+          icon="pi pi-arrow-left" :label="t('app.back')"
+          @click="goBack"
+          v-tooltip.bottom="t('app.back')"
         />
         <span class="page-title">{{ pageTitle }}</span>
         <span class="crumb" v-if="auth.companyId !== null">

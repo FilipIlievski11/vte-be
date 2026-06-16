@@ -258,6 +258,7 @@ export interface VehicleRelationDto {
   relationTypeId: number;
   relationTypeName: string | null;
   clientDisplayName: string | null;
+  clientMb: string | null;
   vehicleVin: string | null;
   vehiclePlate: string | null;
   vehicleMaker: string | null;
