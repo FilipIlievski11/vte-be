@@ -54,4 +54,10 @@ public record RequestWriteDto(
     [MaxLength(500)] string? Note,
     bool? Active,
     /// <summary>Admin-only override; operators always write to their own tenant.</summary>
-    byte? CompanyId = null);
+    byte? CompanyId = null,
+    /// <summary>For ownership-transfer types: the CLIENT chosen as the new owner
+    /// (free search, mirrors legacy "Нов сопственик"). The server resolves-or-creates
+    /// the new-owner ClientVehicleRelation (new client + anchor's vehicle) and stores
+    /// its id in NewClientVehicleRelationId. Takes precedence over a directly-supplied
+    /// NewClientVehicleRelationId, which is kept only for migrated/legacy data.</summary>
+    long? NewOwnerClientId = null);

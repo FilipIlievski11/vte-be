@@ -114,7 +114,14 @@ const ownerSuggestions  = ref<OwnerOpt[]>([]);
 
 const selectedRelation  = ref<VehicleRelationDto | null>(null);
 const selectedRelationId = ref<number | null>(null);
-const relations = ref<VehicleRelationDto[]>([]);   // the picked owner's vehicles (vehicle dropdown + new-owner picker)
+const relations = ref<VehicleRelationDto[]>([]);   // the picked owner's vehicles (vehicle dropdown)
+
+// New owner ("Нов сопственик"): a FREE client search (any client by EMBG/name), mirroring
+// legacy. The chosen CLIENT id goes to the server, which resolves/creates the relation.
+const newOwnerSel         = ref<OwnerOpt | string | null>(null);
+const newOwnerSuggestions = ref<OwnerOpt[]>([]);
+const newOwnerClientId    = computed<number | null>(() =>
+  newOwnerSel.value && typeof newOwnerSel.value === 'object' ? newOwnerSel.value.clientId : null);
 
 const ownerSelObj = computed<OwnerOpt | null>(() =>
   ownerSel.value && typeof ownerSel.value === 'object' ? ownerSel.value : null);
@@ -134,11 +141,9 @@ const selectedType = computed<RequestType | null>(() =>
   requestTypeId.value != null ? requestTypes.value.find(t => t.id === requestTypeId.value) ?? null : null,
 );
 
-// Derived: when the chosen type transfers ownership, "new owner" picker becomes required
+// Derived: when the chosen type transfers ownership, the "Нов сопственик" field
+// becomes required and is shown from the moment the type is selected (legacy parity).
 const requiresNewOwner = computed(() => selectedType.value?.transfersOwnership ?? false);
-const newOwnerOptions = computed(() =>
-  relations.value.filter(r => r.id !== selectedRelationId.value),
-);
 
 const statusBadge = computed<{ label: string; severity: 'success' | 'info' | 'danger' }>(() => {
   if (!active.value) return { label: t('requests.status.inactive'), severity: 'danger' };
@@ -456,6 +461,15 @@ async function loadRequest() {
       ownerSel.value = toOwnerOpt(rel.clientId, rel.clientDisplayName, rel.clientMb);
       await loadRelationsForClient(rel.clientId);
     }
+
+    // Hydrate the "Нов сопственик" field for display from the stored relation.
+    if (r.newClientVehicleRelationId) {
+      const { data: nrel } = await api.get<VehicleRelationDto>(
+        `/client-vehicle-relations/${r.newClientVehicleRelationId}`,
+      ).catch(() => ({ data: null as unknown as VehicleRelationDto }));
+      if (nrel?.clientId)
+        newOwnerSel.value = toOwnerOpt(nrel.clientId, nrel.clientDisplayName, nrel.clientMb);
+    }
   } catch (e: any) {
     toast.add({ severity: 'error', summary: t('clients.loadFailed'), detail: e?.message, life: 4000 });
   } finally {
@@ -541,6 +555,20 @@ watch(vehicleSel, v => {
   if (typeof v === 'string') { selectedRelation.value = null; selectedRelationId.value = null; }
 });
 
+// --- New owner field ("Нов сопственик") — free client search, any client by EMBG/name ---
+async function onNewOwnerComplete(e: { query: string }) {
+  const term = (e.query || '').trim();
+  if (term.length < 2) { newOwnerSuggestions.value = []; return; }
+  try {
+    const { data } = await api.get<Paged<Client>>('/clients', { params: { q: term, pageSize: 20 } });
+    newOwnerSuggestions.value = data.items.map(c => toOwnerOpt(c.id, joinClientName(c), c.mb));
+  } catch { newOwnerSuggestions.value = []; }
+}
+function openNewOwnerEdit() {
+  const id = newOwnerClientId.value;
+  if (id) window.open(router.resolve({ name: 'client-edit', params: { id } }).href, '_blank');
+}
+
 function currentClientId(): number | null {
   return selectedRelation.value?.clientId ?? ownerSelObj.value?.clientId ?? null;
 }
@@ -558,15 +586,6 @@ function openOwnerEdit() {
   if (id) window.open(router.resolve({ name: 'client-edit', params: { id } }).href, '_blank');
 }
 
-function relationLabel(r: VehicleRelationDto): string {
-  const parts: string[] = [];
-  if (r.relationTypeName) parts.push(r.relationTypeName);
-  if (r.vehiclePlate)     parts.push(r.vehiclePlate);
-  if (r.vehicleMaker || r.vehicleModel) parts.push([r.vehicleMaker, r.vehicleModel].filter(Boolean).join(' '));
-  if (r.vehicleVin)       parts.push(`VIN ${r.vehicleVin}`);
-  return parts.join(' · ') || `Relation #${r.id}`;
-}
-
 function fmtDateTime(s: string | null): string {
   if (!s) return '—';
   return new Date(s).toLocaleString();
@@ -575,7 +594,8 @@ function fmtDateTime(s: string | null): string {
 function validate(): string | null {
   if (!requestTypeId.value) return t('requests.form.typeRequired');
   if (!selectedRelationId.value) return t('requests.form.relationRequired');
-  if (requiresNewOwner.value && !newClientVehicleRelationId.value)
+  // New owner: accept a freshly-chosen client OR (on legacy/edit data) a stored relation id.
+  if (requiresNewOwner.value && !newOwnerClientId.value && !newClientVehicleRelationId.value)
     return t('requests.form.newOwnerRequired');
   return null;
 }
@@ -589,7 +609,10 @@ async function save() {
   const body: RequestWrite = {
     requestTypeId: requestTypeId.value!,
     clientVehicleRelationId: selectedRelationId.value!,
-    newClientVehicleRelationId: newClientVehicleRelationId.value ?? null,
+    // New owner is captured as a CLIENT; the server resolves/creates the relation.
+    // newClientVehicleRelationId is kept only as a fallback for already-stored data.
+    newOwnerClientId: requiresNewOwner.value ? newOwnerClientId.value : null,
+    newClientVehicleRelationId: newOwnerClientId.value ? null : (newClientVehicleRelationId.value ?? null),
     technicalExamReportId: null,
     previousRegistrationId: null,
     note: note.value || null,
@@ -786,16 +809,31 @@ onMounted(async () => {
           <i class="pi pi-lock" />&nbsp;{{ t('requests.form.anchorLocked') }}
         </div>
 
-        <!-- New owner (only when type.transfersOwnership) -->
-        <div class="field new-owner" v-if="requiresNewOwner && selectedRelation">
-          <label>{{ t('requests.form.newOwner') }} *</label>
-          <Select
-            v-model="newClientVehicleRelationId"
-            :options="newOwnerOptions"
-            :optionLabel="relationLabel"
-            optionValue="id"
-            :disabled="isReadOnly"
-            :placeholder="t('requests.form.pickNewOwner')" />
+        <!-- Нов сопственик: free client search, shown whenever the type transfers ownership -->
+        <div class="new-owner-block" v-if="requiresNewOwner">
+          <div class="new-owner-title">{{ t('requests.form.newOwner') }}</div>
+          <div class="anchor-row">
+            <label>{{ t('requests.form.newOwnerField') }} *</label>
+            <AutoComplete
+              v-model="newOwnerSel"
+              :suggestions="newOwnerSuggestions"
+              optionLabel="label"
+              :disabled="isReadOnly"
+              :placeholder="t('requests.form.newOwnerFieldHint')"
+              class="anchor-input"
+              @complete="onNewOwnerComplete">
+              <template #option="{ option }">
+                <div class="ac-opt">
+                  <span class="ac-main"><strong>{{ option.name }}</strong></span>
+                  <span class="ac-sub" v-if="option.mb">EMBG {{ option.mb }}</span>
+                </div>
+              </template>
+            </AutoComplete>
+            <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+              :disabled="isReadOnly" @click="openOwnerNew" v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
+            <Button :label="t('common.edit')" icon="pi pi-pencil" severity="secondary" outlined size="small"
+              :disabled="newOwnerClientId === null" @click="openNewOwnerEdit" />
+          </div>
           <div class="muted small">{{ t('requests.form.newOwnerHint') }}</div>
         </div>
       </template>
@@ -1081,7 +1119,11 @@ onMounted(async () => {
 .anchor-input { width: 100% }
 .anchor-input :deep(.p-autocomplete-input) { width: 100% }
 .anchor-locked { margin-top: .2rem }
-.new-owner { margin-top: .9rem }
+.new-owner-block {
+  margin-top: 1rem; padding-top: .85rem;
+  border-top: 1px solid var(--p-content-border-color);
+}
+.new-owner-title { font-weight: 700; font-size: .9rem; margin-bottom: .5rem }
 .ac-opt { display: flex; flex-direction: column; line-height: 1.25 }
 .ac-main { font-size: .85rem }
 .ac-sub { font-size: .75rem; color: var(--p-text-muted-color) }

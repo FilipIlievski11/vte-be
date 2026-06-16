@@ -6,6 +6,7 @@ using VTE.Domain.Identity;
 using VTE.Domain.Payments;
 using VTE.Domain.Requests;
 using VTE.Domain.TechnicalExams;
+using VTE.Domain.Vehicles;
 using VTE.Infrastructure.Persistence;
 using VTE.Infrastructure.Pricing;
 using VTE.Infrastructure.Tenancy;
@@ -270,14 +271,34 @@ public class RequestsController : ControllerBase
         if (type == null)
             return BadRequest(new { error = "RequestType not found." });
 
-        // BR-REQ-005: when TransfersOwnership, NewClientVehicleRelationId is required
-        if (type.TransfersOwnership && (dto.NewClientVehicleRelationId is null || dto.NewClientVehicleRelationId.Value < 1))
-            return BadRequest(new { error = "Новиот сопственик е задолжителен за пренос на сопственост." });
-
-        if (dto.NewClientVehicleRelationId.HasValue)
+        // New owner ("Нов сопственик", legacy uxRequestEdit.RebindUI:159-171): for
+        // ownership-transfer types the operator free-searches ANY client; the server
+        // resolves-or-creates the (newClient + anchor's vehicle) owner relation so that
+        // NewClientVehicleRelationId always points at a real relation. A directly-supplied
+        // relation id is still honored for migrated/legacy data.
+        long? newOwnerRelationId = dto.NewClientVehicleRelationId;
+        if (type.TransfersOwnership)
         {
-            var exists = await _db.ClientVehicleRelations.AnyAsync(r => r.Id == dto.NewClientVehicleRelationId.Value);
-            if (!exists) return BadRequest(new { error = "NewClientVehicleRelation not found." });
+            if (dto.NewOwnerClientId is long nc && nc > 0)
+            {
+                if (!await _db.Clients.AnyAsync(c => c.Id == nc))
+                    return BadRequest(new { error = "Новиот сопственик (клиент) не постои." });
+                if (relation.VehicleId is null)
+                    return BadRequest(new { error = "Анкер-врската нема возило за пренос на сопственост." });
+                newOwnerRelationId = await ResolveOrCreateNewOwnerRelationAsync(
+                    relation.VehicleId.Value, relation.RelationTypeId, nc);
+            }
+            if (newOwnerRelationId is null || newOwnerRelationId < 1)
+                return BadRequest(new { error = "Новиот сопственик е задолжителен за пренос на сопственост." });
+            if (newOwnerRelationId == dto.ClientVehicleRelationId)
+                return BadRequest(new { error = "Новиот сопственик мора да се разликува од тековниот сопственик." });
+            if (!await _db.ClientVehicleRelations.AnyAsync(r => r.Id == newOwnerRelationId.Value))
+                return BadRequest(new { error = "Новата врска не постои." });
+        }
+        else if (dto.NewClientVehicleRelationId is long nrel && nrel > 0)
+        {
+            if (!await _db.ClientVehicleRelations.AnyAsync(r => r.Id == nrel))
+                return BadRequest(new { error = "NewClientVehicleRelation not found." });
         }
 
         var entity = new Request
@@ -285,7 +306,7 @@ public class RequestsController : ControllerBase
             CompanyId = companyId,
             RequestTypeId = dto.RequestTypeId,
             ClientVehicleRelationId = dto.ClientVehicleRelationId,
-            NewClientVehicleRelationId = dto.NewClientVehicleRelationId,
+            NewClientVehicleRelationId = newOwnerRelationId,
             TechnicalExamReportId = dto.TechnicalExamReportId,
             PreviousRegistrationId = dto.PreviousRegistrationId,
             Note = dto.Note,
@@ -378,6 +399,35 @@ public class RequestsController : ControllerBase
     ///   • Gate (legacy `IdTechnicalExamReport = 0`) → only when the request has no exam linked yet.
     ///   • No "skip if a recent valid exam exists" check — legacy has none.
     /// </summary>
+    /// <summary>
+    /// Resolves (or creates) the new-owner relation for an ownership transfer, mirroring legacy
+    /// uxRequestEdit.RebindUI:159-171: reuse an existing (client + vehicle) relation if present,
+    /// otherwise create one. Created INACTIVE — the End flow activates it (and deactivates the
+    /// anchor) when the transfer actually completes, so an abandoned request never leaves a vehicle
+    /// with two active owners.
+    /// </summary>
+    private async Task<long> ResolveOrCreateNewOwnerRelationAsync(long vehicleId, byte ownerRelationTypeId, long newOwnerClientId)
+    {
+        var existing = await _db.ClientVehicleRelations
+            .Where(r => r.ClientId == newOwnerClientId && r.VehicleId == vehicleId)
+            .OrderByDescending(r => r.Active).ThenByDescending(r => r.StartDate)
+            .Select(r => (long?)r.Id)
+            .FirstOrDefaultAsync();
+        if (existing.HasValue) return existing.Value;
+
+        var rel = new ClientVehicleRelation
+        {
+            ClientId = newOwnerClientId,
+            VehicleId = vehicleId,
+            RelationTypeId = ownerRelationTypeId,
+            StartDate = DateTime.UtcNow,
+            Active = false,   // activated by the End flow when ownership transfer completes
+        };
+        _db.ClientVehicleRelations.Add(rel);
+        await _db.SaveChangesAsync();
+        return rel.Id;
+    }
+
     private async Task TryAutoCreateExamAsync(Request entity, RequestType type)
     {
         if (!_config.GetValue("Requests:AutoCreateTechExam", false)) return;
@@ -474,14 +524,35 @@ public class RequestsController : ControllerBase
         var type = await _db.RequestTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == dto.RequestTypeId);
         if (type == null) return BadRequest(new { error = "RequestType not found." });
 
-        if (type.TransfersOwnership && (dto.NewClientVehicleRelationId is null || dto.NewClientVehicleRelationId.Value < 1))
-            return BadRequest(new { error = "Новиот сопственик е задолжителен за пренос на сопственост." });
+        // New owner: same resolve-or-create as Create. The anchor (ClientVehicleRelationId)
+        // is locked on update, so the new-owner relation is keyed to the existing anchor's vehicle.
+        long? newOwnerRelationId = dto.NewClientVehicleRelationId;
+        if (type.TransfersOwnership)
+        {
+            if (dto.NewOwnerClientId is long nc && nc > 0)
+            {
+                if (!await _db.Clients.AnyAsync(c => c.Id == nc))
+                    return BadRequest(new { error = "Новиот сопственик (клиент) не постои." });
+                var anchor = await _db.ClientVehicleRelations.AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.Id == entity.ClientVehicleRelationId);
+                if (anchor?.VehicleId is null)
+                    return BadRequest(new { error = "Анкер-врската нема возило за пренос на сопственост." });
+                newOwnerRelationId = await ResolveOrCreateNewOwnerRelationAsync(
+                    anchor.VehicleId.Value, anchor.RelationTypeId, nc);
+            }
+            if (newOwnerRelationId is null || newOwnerRelationId < 1)
+                return BadRequest(new { error = "Новиот сопственик е задолжителен за пренос на сопственост." });
+            if (newOwnerRelationId == entity.ClientVehicleRelationId)
+                return BadRequest(new { error = "Новиот сопственик мора да се разликува од тековниот сопственик." });
+            if (!await _db.ClientVehicleRelations.AnyAsync(r => r.Id == newOwnerRelationId.Value))
+                return BadRequest(new { error = "Новата врска не постои." });
+        }
 
         entity.RequestTypeId = dto.RequestTypeId;
         // ClientVehicleRelationId is the anchor — keep it locked once a request exists
         // (operator should soft-delete + create new request if the anchor is wrong)
         // entity.ClientVehicleRelationId = dto.ClientVehicleRelationId;
-        entity.NewClientVehicleRelationId = dto.NewClientVehicleRelationId;
+        entity.NewClientVehicleRelationId = newOwnerRelationId;
         entity.TechnicalExamReportId = dto.TechnicalExamReportId;
         entity.PreviousRegistrationId = dto.PreviousRegistrationId;
         entity.Note = dto.Note;

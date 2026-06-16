@@ -361,6 +361,7 @@ export interface RequestWrite {
   requestTypeId: number;
   clientVehicleRelationId: number;
   newClientVehicleRelationId: number | null;
+  newOwnerClientId?: number | null;
   technicalExamReportId: number | null;
   previousRegistrationId: number | null;
   note: string | null;
