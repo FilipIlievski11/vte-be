@@ -34,6 +34,12 @@ function fmtDate(s: string | null | undefined): string {
 function num(v: number | null | undefined): string {
   return v == null ? '' : String(Math.round(v));
 }
+// Decimal with Macedonian comma separator, no rounding / trailing zeros.
+// e.g. 3.3 → "3,3", 55 → "55". Used for engine power (P.2) which the legacy
+// printout shows with the fractional part (e.g. "3,3"), unlike the rounded fields.
+function dec(v: number | null | undefined): string {
+  return v == null ? '' : String(v).replace('.', ',');
+}
 
 interface Pos { x: number; y: number; w: number; h?: number; align?: 'left'|'center'|'right'; bold?: boolean; size?: number; label?: string }
 type PageMap = Record<string, Pos>;
@@ -192,7 +198,13 @@ const variantY = computed(() => {
 const v = computed(() => ({
   page1: {
     printDate:      fmtDate(b().request.createdAt),
-    toMvr:          b().lastRegistration?.issuer || '',
+    // "ДО МВР - ОУР" — legacy printZelen.vb binds this to CurrentVehicle.LastRegIssuer
+    // (for non-new-registration types) or the new owner's community issuer (for new
+    // registrations). In the migrated data LastRegIssuer is empty, and the
+    // VehicleRegistration child carries the stale OLD plate's issuer (e.g. "МВР КОЧАНИ"
+    // from a previous municipality), which is wrong here. The legacy printout leaves
+    // this field blank — match that rather than print the stale issuer.
+    toMvr:          '',
     // Plate source: legacy printZelen.vb binds lblNovaReg.Text to
     // CurrentVehicle.LastRegistration — backed by Vehicles.LastRegistratinNumber
     // (which migrate-vehicles.sql copies into Vehicle.Plate). The VehicleRegistration
@@ -252,7 +264,7 @@ const v = computed(() => ({
     bodyType:          b().vehicle?.bodyType || '',
     color:             [b().vehicle?.primaryColorCode, b().vehicle?.primaryColorName].filter(Boolean).join(' '),
     engineNumber:      b().vehicle?.engineNumber || '',
-    powerKw:           num(b().vehicle?.enginePowerKw),
+    powerKw:           dec(b().vehicle?.enginePowerKw),
     cc:                num(b().vehicle?.engineWorkingCapacityCc),
     mass:              num(b().vehicle?.emptyWeightKg),
     seats:             num(b().vehicle?.seats),
