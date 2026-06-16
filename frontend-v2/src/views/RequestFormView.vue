@@ -5,7 +5,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { api } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 import type {
-  Company,
+  Client, Company, Paged,
   RequestRead, RequestWrite,
   RequestType,
   VehicleRelationDto,
@@ -15,7 +15,7 @@ import type {
 } from '@/types';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
-import InputText from 'primevue/inputtext';
+import AutoComplete from 'primevue/autocomplete';
 import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
@@ -84,18 +84,36 @@ const createdByName = ref<string | null>(null);
 const modifiedByName = ref<string | null>(null);
 const endedByName = ref<string | null>(null);
 
-// ---- Anchor: single vehicle+owner search ----
-// One input replaces the old "pick client → then pick vehicle" two-step. Each
-// result row is a client↔vehicle relation, matched by plate / VIN / maker /
-// model / owner name / EMBG, so picking a row sets the whole anchor at once.
-const relationQuery = ref('');
-const relationResults = ref<VehicleRelationDto[]>([]);
-const selectedRelation = ref<VehicleRelationDto | null>(null);
-const searchingRelations = ref(false);
-const relations = ref<VehicleRelationDto[]>([]);   // sibling relations of the picked client (new-owner picker)
-const selectedRelationId = ref<number | null>(null);
+// ---- Anchor: legacy two-field linked pickers (vehicle ⇄ owner) ----
+// Both fields are always visible. Pick a vehicle → its owner auto-fills.
+// Pick an owner → the vehicle field is scoped to that owner's vehicles.
+// Each field has its own New / Edit buttons. The chosen client↔vehicle
+// relation (`selectedRelation`) is what anchors the request.
+type VehOpt   = VehicleRelationDto & { label: string };
+type OwnerOpt = { clientId: number; name: string; mb: string | null; label: string };
 
-let relationSearchTimer: number | undefined;
+const vehicleSel        = ref<VehOpt | string | null>(null);
+const vehicleSuggestions = ref<VehOpt[]>([]);
+const ownerSel          = ref<OwnerOpt | string | null>(null);
+const ownerSuggestions  = ref<OwnerOpt[]>([]);
+
+const selectedRelation  = ref<VehicleRelationDto | null>(null);
+const selectedRelationId = ref<number | null>(null);
+const relations = ref<VehicleRelationDto[]>([]);   // the picked owner's vehicles (vehicle dropdown + new-owner picker)
+
+const ownerSelObj = computed<OwnerOpt | null>(() =>
+  ownerSel.value && typeof ownerSel.value === 'object' ? ownerSel.value : null);
+
+function vehLabel(r: VehicleRelationDto): string {
+  return [r.vehicleVin, r.vehiclePlate].filter(Boolean).join(' ') || `#${r.id}`;
+}
+function toVehOpt(r: VehicleRelationDto): VehOpt { return { ...r, label: vehLabel(r) }; }
+function toOwnerOpt(clientId: number, name: string | null, mb: string | null): OwnerOpt {
+  return { clientId, name: name ?? '', mb, label: [name, mb].filter(Boolean).join(' ') || `#${clientId}` };
+}
+function joinClientName(c: Client): string {
+  return [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' ').trim();
+}
 
 const selectedType = computed<RequestType | null>(() =>
   requestTypeId.value != null ? requestTypes.value.find(t => t.id === requestTypeId.value) ?? null : null,
@@ -412,13 +430,15 @@ async function loadRequest() {
     modifiedByName.value = r.modifiedByUserName;
     endedByName.value = r.endedByUserName;
 
-    // Hydrate the anchor: read the relation, then the client's sibling relations.
+    // Hydrate both fields: read the relation, then the client's sibling relations.
     selectedRelationId.value = r.clientVehicleRelationId;
     const { data: rel } = await api.get<VehicleRelationDto>(
       `/client-vehicle-relations/${r.clientVehicleRelationId}`,
     ).catch(() => ({ data: null as unknown as VehicleRelationDto }));
     if (rel?.clientId) {
       selectedRelation.value = rel;
+      vehicleSel.value = toVehOpt(rel);
+      ownerSel.value = toOwnerOpt(rel.clientId, rel.clientDisplayName, rel.clientMb);
       await loadRelationsForClient(rel.clientId);
     }
   } catch (e: any) {
@@ -428,24 +448,6 @@ async function loadRequest() {
   }
 }
 
-async function searchRelations() {
-  const term = relationQuery.value.trim();
-  if (term.length < 2) { relationResults.value = []; return; }
-  searchingRelations.value = true;
-  try {
-    const { data } = await api.get<VehicleRelationDto[]>('/client-vehicle-relations', {
-      params: { q: term, activeOnly: true },
-    });
-    relationResults.value = data;
-  } catch { /* ignore */ }
-  finally { searchingRelations.value = false; }
-}
-
-watch(relationQuery, () => {
-  window.clearTimeout(relationSearchTimer);
-  relationSearchTimer = window.setTimeout(searchRelations, 250);
-});
-
 async function loadRelationsForClient(clientId: number) {
   try {
     const { data } = await api.get<VehicleRelationDto[]>('/client-vehicle-relations', {
@@ -453,23 +455,92 @@ async function loadRelationsForClient(clientId: number) {
     });
     relations.value = data;
   } catch { relations.value = []; }
+  return relations.value;
 }
 
-function chooseRelation(r: VehicleRelationDto) {
+// Commit a client↔vehicle relation as the anchor. `syncOwner` re-fills the
+// owner field + reloads the owner's vehicles (used when the vehicle is chosen
+// from the global search, where the owner isn't known yet).
+function pickRelation(r: VehicleRelationDto, syncOwner: boolean) {
   selectedRelation.value = r;
   selectedRelationId.value = r.id;
-  relationResults.value = [];
-  relationQuery.value = '';
+  vehicleSel.value = toVehOpt(r);
   newClientVehicleRelationId.value = null;
-  loadRelationsForClient(r.clientId);   // siblings power the new-owner picker
+  if (syncOwner) {
+    ownerSel.value = toOwnerOpt(r.clientId, r.clientDisplayName, r.clientMb);
+    loadRelationsForClient(r.clientId);
+  }
 }
 
-function clearRelation() {
-  if (isEdit.value) return;             // anchor is locked on edit
-  selectedRelation.value = null;
-  relations.value = [];
-  selectedRelationId.value = null;
-  newClientVehicleRelationId.value = null;
+// --- Vehicle field (top) ---
+async function onVehicleComplete(e: { query: string }) {
+  const term = (e.query || '').trim();
+  // Owner already chosen → suggest only their vehicles (local filter).
+  if (ownerSelObj.value) {
+    const t = term.toUpperCase();
+    vehicleSuggestions.value = relations.value
+      .filter(r => !t
+        || (r.vehicleVin   ?? '').toUpperCase().includes(t)
+        || (r.vehiclePlate ?? '').toUpperCase().includes(t))
+      .map(toVehOpt);
+    return;
+  }
+  // No owner yet → global search by VIN / plate (relations across the company).
+  if (term.length < 2) { vehicleSuggestions.value = []; return; }
+  try {
+    const { data } = await api.get<VehicleRelationDto[]>('/client-vehicle-relations', {
+      params: { q: term, activeOnly: true },
+    });
+    vehicleSuggestions.value = data.map(toVehOpt);
+  } catch { vehicleSuggestions.value = []; }
+}
+function onVehicleSelect(e: { value: VehOpt }) {
+  // If an owner is already locked in, keep it; otherwise derive it.
+  pickRelation(e.value, !ownerSelObj.value);
+}
+
+// --- Owner field (bottom) ---
+async function onOwnerComplete(e: { query: string }) {
+  const term = (e.query || '').trim();
+  if (term.length < 2) { ownerSuggestions.value = []; return; }
+  try {
+    const { data } = await api.get<Paged<Client>>('/clients', { params: { q: term, pageSize: 20 } });
+    ownerSuggestions.value = data.items.map(c => toOwnerOpt(c.id, joinClientName(c), c.mb));
+  } catch { ownerSuggestions.value = []; }
+}
+async function onOwnerSelect(e: { value: OwnerOpt }) {
+  const list = await loadRelationsForClient(e.value.clientId);
+  if (list.length === 1) {
+    pickRelation(list[0], false);           // single vehicle → auto-select it
+  } else {
+    // Multiple (or none): clear the vehicle so the operator picks from the dropdown.
+    selectedRelation.value = null;
+    selectedRelationId.value = null;
+    vehicleSel.value = null;
+    newClientVehicleRelationId.value = null;
+  }
+}
+
+// Retyping over a committed value drops the anchor until a new pick is made.
+watch(vehicleSel, v => {
+  if (typeof v === 'string') { selectedRelation.value = null; selectedRelationId.value = null; }
+});
+
+function currentClientId(): number | null {
+  return selectedRelation.value?.clientId ?? ownerSelObj.value?.clientId ?? null;
+}
+
+// New / Edit open the vehicle or client form in a new tab so the in-progress
+// request isn't lost; the operator returns and re-searches.
+function openVehicleNew()  { window.open(router.resolve({ name: 'vehicle-new' }).href, '_blank'); }
+function openVehicleEdit() {
+  const id = selectedRelation.value?.vehicleId;
+  if (id) window.open(router.resolve({ name: 'vehicle-edit', params: { id } }).href, '_blank');
+}
+function openOwnerNew()  { window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+function openOwnerEdit() {
+  const id = currentClientId();
+  if (id) window.open(router.resolve({ name: 'client-edit', params: { id } }).href, '_blank');
 }
 
 function relationLabel(r: VehicleRelationDto): string {
@@ -621,52 +692,70 @@ onMounted(async () => {
       </template>
     </Card>
 
-    <!-- Anchor: single vehicle + owner search -->
+    <!-- Anchor: legacy two-field linked pickers (vehicle ⇄ owner) -->
     <Card class="card">
       <template #title>{{ t('requests.form.sections.anchor') }}</template>
       <template #content>
-        <!-- Combined search (new only — anchor locked on edit) -->
-        <div v-if="!isEdit" class="field">
-          <label>{{ t('requests.form.vehicleOwner') }} *</label>
-          <div v-if="selectedRelation" class="picked">
-            <span class="picked-name">{{ selectedRelation.clientDisplayName || ('#' + selectedRelation.clientId) }}</span>
-            <span class="muted" v-if="selectedRelation.clientMb">&nbsp;·&nbsp;EMBG {{ selectedRelation.clientMb }}</span>
-            <span class="picked-veh">{{ relationLabel(selectedRelation) }}</span>
-            <Button icon="pi pi-times" text size="small" @click="clearRelation" v-tooltip.left="t('common.cancel')" />
-          </div>
-          <div v-else>
-            <InputText v-model="relationQuery" :placeholder="t('requests.form.searchVehicleOwner')" size="small" style="width:100%" />
-            <ul v-if="relationResults.length" class="search-list">
-              <li v-for="r in relationResults" :key="r.id" @click="chooseRelation(r)">
-                <div class="res-line">
-                  <strong>{{ r.clientDisplayName || ('#' + r.clientId) }}</strong>
-                  <span class="muted" v-if="r.clientMb">&nbsp;· EMBG {{ r.clientMb }}</span>
-                </div>
-                <div class="res-veh muted">{{ relationLabel(r) }}</div>
-              </li>
-            </ul>
-            <div v-else-if="relationQuery.trim().length >= 2 && !searchingRelations" class="muted small">
-              {{ t('requests.form.noVehicleMatches') }}
-            </div>
-            <div class="muted small">{{ t('requests.form.searchVehicleOwnerHint') }}</div>
-          </div>
+        <!-- Vehicle — search by chassis (VIN) or plate; picking fills the owner -->
+        <div class="anchor-row">
+          <label>{{ t('requests.form.vehicleField') }} *</label>
+          <AutoComplete
+            v-model="vehicleSel"
+            :suggestions="vehicleSuggestions"
+            optionLabel="label"
+            dropdown
+            :disabled="isEdit || isReadOnly"
+            :placeholder="t('requests.form.vehicleFieldHint')"
+            class="anchor-input"
+            @complete="onVehicleComplete"
+            @item-select="onVehicleSelect">
+            <template #option="{ option }">
+              <div class="ac-opt">
+                <span class="ac-main">{{ option.vehicleVin }} <strong>{{ option.vehiclePlate }}</strong></span>
+                <span class="ac-sub">
+                  {{ [option.vehicleMaker, option.vehicleModel].filter(Boolean).join(' ') }}
+                  <template v-if="!ownerSelObj && option.clientDisplayName"> · {{ option.clientDisplayName }}</template>
+                </span>
+              </div>
+            </template>
+          </AutoComplete>
+          <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+            :disabled="isEdit || isReadOnly" @click="openVehicleNew" v-tooltip.bottom="t('requests.form.newVehicleHint')" />
+          <Button :label="t('common.edit')" icon="pi pi-pencil" severity="secondary" outlined size="small"
+            :disabled="!selectedRelation?.vehicleId" @click="openVehicleEdit" />
         </div>
 
-        <!-- Locked anchor display on edit -->
-        <div v-else class="field">
-          <label>{{ t('requests.form.vehicleOwner') }}</label>
-          <div class="picked locked">
-            <template v-if="selectedRelation">
-              <span class="picked-name">{{ selectedRelation.clientDisplayName || ('#' + selectedRelation.clientId) }}</span>
-              <span class="picked-veh">{{ relationLabel(selectedRelation) }}</span>
+        <!-- Owner — search by EMBG or name; picking scopes the vehicle field -->
+        <div class="anchor-row">
+          <label>{{ t('requests.form.ownerField') }} *</label>
+          <AutoComplete
+            v-model="ownerSel"
+            :suggestions="ownerSuggestions"
+            optionLabel="label"
+            :disabled="isEdit || isReadOnly"
+            :placeholder="t('requests.form.ownerFieldHint')"
+            class="anchor-input"
+            @complete="onOwnerComplete"
+            @item-select="onOwnerSelect">
+            <template #option="{ option }">
+              <div class="ac-opt">
+                <span class="ac-main"><strong>{{ option.name }}</strong></span>
+                <span class="ac-sub" v-if="option.mb">EMBG {{ option.mb }}</span>
+              </div>
             </template>
-            <span v-else class="muted">—</span>
-            <i class="pi pi-lock muted" v-tooltip.left="t('clients.form.companyLocked')" />
-          </div>
+          </AutoComplete>
+          <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+            :disabled="isEdit || isReadOnly" @click="openOwnerNew" v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
+          <Button :label="t('common.edit')" icon="pi pi-pencil" severity="secondary" outlined size="small"
+            :disabled="currentClientId() === null" @click="openOwnerEdit" />
+        </div>
+
+        <div v-if="isEdit" class="muted small anchor-locked">
+          <i class="pi pi-lock" />&nbsp;{{ t('requests.form.anchorLocked') }}
         </div>
 
         <!-- New owner (only when type.transfersOwnership) -->
-        <div class="field" v-if="requiresNewOwner && selectedRelation">
+        <div class="field new-owner" v-if="requiresNewOwner && selectedRelation">
           <label>{{ t('requests.form.newOwner') }} *</label>
           <Select
             v-model="newClientVehicleRelationId"
@@ -912,10 +1001,24 @@ onMounted(async () => {
 }
 .search-list li { padding: .4rem .65rem; cursor: pointer }
 .search-list li:hover { background: var(--p-highlight-background) }
-.res-line { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap }
-.res-veh { font-size: .78rem; margin-top: .1rem }
-.picked-veh { font-size: .82rem; color: var(--p-text-muted-color) }
-.picked { flex-wrap: wrap }
+/* Legacy-style two-field anchor: label · input · New · Edit on one row */
+.anchor-row {
+  display: grid;
+  grid-template-columns: 13rem 1fr auto auto;
+  align-items: center; gap: .5rem; margin-bottom: .6rem;
+}
+.anchor-row > label { font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+.anchor-input { width: 100% }
+.anchor-input :deep(.p-autocomplete-input) { width: 100% }
+.anchor-locked { margin-top: .2rem }
+.new-owner { margin-top: .9rem }
+.ac-opt { display: flex; flex-direction: column; line-height: 1.25 }
+.ac-main { font-size: .85rem }
+.ac-sub { font-size: .75rem; color: var(--p-text-muted-color) }
+@media (max-width: 720px) {
+  .anchor-row { grid-template-columns: 1fr auto auto; }
+  .anchor-row > label { grid-column: 1 / -1; margin-bottom: -.2rem }
+}
 .audit-table { width: 100%; font-size: .85rem }
 .audit-table td { padding: .25rem .5rem }
 .audit-table td:first-child { font-weight: 600; color: var(--p-text-muted-color); width: 7rem }
