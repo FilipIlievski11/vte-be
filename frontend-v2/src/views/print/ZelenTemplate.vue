@@ -198,13 +198,15 @@ const variantY = computed(() => {
 const v = computed(() => ({
   page1: {
     printDate:      fmtDate(b().request.createdAt),
-    // "ДО МВР - ОУР" — legacy printZelen.vb binds this to CurrentVehicle.LastRegIssuer
-    // (for non-new-registration types) or the new owner's community issuer (for new
-    // registrations). In the migrated data LastRegIssuer is empty, and the
-    // VehicleRegistration child carries the stale OLD plate's issuer (e.g. "МВР КОЧАНИ"
-    // from a previous municipality), which is wrong here. The legacy printout leaves
-    // this field blank — match that rather than print the stale issuer.
-    toMvr:          '',
+    // "ДО МВР - ОУР" = the destination MVR office. Legacy printZelen.vb resolves it from
+    // the (new) owner's community via GetRegistrationIssuerInfoByCommunity — offices are
+    // named "МВР {ОПШТИНА}" (e.g. owner in Велес → "МВР ВЕЛЕС"). Do NOT use the
+    // VehicleRegistration child's issuer: for a re-registered vehicle that's the stale
+    // OLD-municipality office (e.g. "МВР КОЧАНИ").
+    toMvr:          (() => {
+                       const com = b().client?.communityName?.trim() || b().client?.cityName?.trim();
+                       return com ? `МВР ${com}` : '';
+                     })(),
     // Plate source: legacy printZelen.vb binds lblNovaReg.Text to
     // CurrentVehicle.LastRegistration — backed by Vehicles.LastRegistratinNumber
     // (which migrate-vehicles.sql copies into Vehicle.Plate). The VehicleRegistration
