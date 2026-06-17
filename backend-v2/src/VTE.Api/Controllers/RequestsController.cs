@@ -800,29 +800,40 @@ public class RequestsController : ControllerBase
         // sentinel ("VE-000-AA") that BuildLastRegistrationMeta returns as newest.
         RegistrationMeta? prevReg = await BuildPreviousRegistrationMeta(relation?.VehicleId, vehicleMeta?.Plate);
 
-        // New owner side (ownership transfers / re-registrations).
-        // NOTE: the legacy Request.NewClientVehicleRelationId is unreliable in the
-        // migrated data — it frequently holds a stale id that resolves to an
-        // unrelated relation (often a *client* id reused as a relation id). The
-        // dependable signal is the vehicle's own relations: a transfer creates a
-        // SECOND active ClientVehicleRelation for the new owner alongside the
-        // anchor (old owner). So resolve the new owner as the most-recent active
-        // relation on the same vehicle that ISN'T the anchor relation.
+        // New owner (Б "промена на сопственикот" panel / re-registration).
+        // The legacy IdCustomerVehicleRelationNew — migrated into
+        // Request.NewClientVehicleRelationId — is a CLIENT id (legacy overloads the
+        // column: customer-id while editing, relation-id after save), whereas
+        // v2-native requests store a real RELATION id. Mirror the legacy print, which
+        // shows NewOwner = Customer(IdCustomerVehicleRelationNew):
+        //   • if the value is a client that has a relation on THIS vehicle → it's the
+        //     migrated new-owner customer id. Covers same-owner data changes
+        //     (e.g. ПЕШАНКОВСКИ, value = the page-1 client) AND true transfers
+        //     (e.g. КОВАЧЕВ, a different client).
+        //   • otherwise treat it as a relation id (v2-native) and take that
+        //     relation's client.
+        // (Replaces the old "newest non-anchor active relation on the vehicle"
+        // heuristic, which wrongly resolved to a PRIOR owner.)
         ClientMeta? newClientMeta = null;
         VehicleMeta? newVehicleMeta = null;
-        if (type.TransfersOwnership && relation != null && relation.VehicleId.HasValue)
+        if (r.NewClientVehicleRelationId is long newRef && newRef > 0 && relation?.VehicleId is long newVid)
         {
-            var newRel = await _db.ClientVehicleRelations.AsNoTracking()
-                .Where(x => x.VehicleId == relation.VehicleId.Value
-                         && x.Id != relation.Id
-                         && x.Active)
-                .OrderByDescending(x => x.StartDate)
-                .ThenByDescending(x => x.Id)
-                .FirstOrDefaultAsync();
-            if (newRel != null)
+            bool isClientOnVehicle = await _db.ClientVehicleRelations.AsNoTracking()
+                .AnyAsync(x => x.VehicleId == newVid && x.ClientId == newRef);
+            if (isClientOnVehicle)
             {
-                newClientMeta = await BuildClientMeta(newRel.ClientId);
-                newVehicleMeta = await BuildVehicleMeta(newRel.VehicleId);
+                newClientMeta = await BuildClientMeta(newRef);
+                newVehicleMeta = await BuildVehicleMeta(newVid);
+            }
+            else
+            {
+                var newRel = await _db.ClientVehicleRelations.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == newRef);
+                if (newRel != null)
+                {
+                    newClientMeta = await BuildClientMeta(newRel.ClientId);
+                    newVehicleMeta = await BuildVehicleMeta(newRel.VehicleId);
+                }
             }
         }
 
