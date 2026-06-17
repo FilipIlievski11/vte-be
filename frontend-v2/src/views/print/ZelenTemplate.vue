@@ -275,18 +275,19 @@ const v = computed(() => ({
     standingSeats:     b().vehicle?.standingSeats != null ? String(b().vehicle!.standingSeats) : '0',
     category:          b().vehicle?.category || '',
 
-    // Б section — ALWAYS the same person as page 1. Confirmed against the
-    // legacy prnx output: for both data-change and (apparent) transfer requests
-    // the lblNew* labels show the current page-1 client, not a separate
-    // newClient. NewClientVehicleRelationId values in our migrated rows are
-    // legacy-internal bookkeeping; do not use them for print rendering.
+    // Б section "промена на податоци за сопственикот" binds to the NEW owner in
+    // legacy printZelen (lblNew* → NewOwner.CustomerFirstName / .MB / .CommunityNameLiving
+    // / .LivingAddress). For an ownership transfer that's a DIFFERENT person than the
+    // page-1 client; for a plain owner-data change there is no separate new owner, so
+    // fall back to the page-1 client. (Page-1 surname=firstName, given=lastName in the
+    // Macedonian data — same mapping applies here.)
     bChangeMark: '✕',
-    bSurname:    b().client?.firstName || '',
-    bFirstName:  b().client?.lastName || '',
+    bSurname:    (b().newClient ?? b().client)?.firstName || '',
+    bFirstName:  (b().newClient ?? b().client)?.lastName || '',
     // Legacy prefixes "УЛ. " on the Б-section address too (same as page 1).
-    bAddress:    b().client?.address ? `УЛ. ${b().client!.address}` : '',
-    bCommunity:  b().client?.communityName || b().client?.cityName || '',
-    bEmbg:       b().client?.mb || '',
+    bAddress:    (() => { const o = b().newClient ?? b().client; return o?.address ? `УЛ. ${o.address}` : ''; })(),
+    bCommunity:  (b().newClient ?? b().client)?.communityName || (b().newClient ?? b().client)?.cityName || '',
+    bEmbg:       (b().newClient ?? b().client)?.mb || '',
   },
 }));
 
