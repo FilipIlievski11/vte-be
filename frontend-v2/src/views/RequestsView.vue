@@ -161,7 +161,7 @@ const skeletonRows = Array.from({ length: 8 });
       />
       <span class="search-wrap">
         <i class="pi pi-search" />
-        <InputText v-model="q" :placeholder="t('common.search')" size="small" />
+        <InputText v-model="q" :placeholder="t('requests.searchHint')" size="small" style="min-width:300px" />
       </span>
       <Select
         v-if="auth.isAdmin"
@@ -180,6 +180,7 @@ const skeletonRows = Array.from({ length: 8 });
     :value="skeletonRows" stripedRows size="small"
     class="tight-table"
   >
+    <Column header="#"><template #body><Skeleton /></template></Column>
     <Column :header="t('requests.col.type')"><template #body><Skeleton /></template></Column>
     <Column :header="t('requests.col.client')"><template #body><Skeleton /></template></Column>
     <Column :header="t('requests.col.vehicle')"><template #body><Skeleton /></template></Column>
@@ -217,6 +218,9 @@ const skeletonRows = Array.from({ length: 8 });
       />
     </template>
 
+    <Column field="id" sortField="id" sortable header="#" style="width:96px">
+      <template #body="{ data }"><span class="req-no">{{ data.id }}</span></template>
+    </Column>
     <Column field="requestTypeName" sortField="type" sortable :header="t('requests.col.type')">
       <template #body="{ data }">{{ data.requestTypeName || '—' }}</template>
     </Column>
@@ -262,6 +266,7 @@ const skeletonRows = Array.from({ length: 8 });
   color: var(--color-text-muted); pointer-events: none; font-size: 0.75rem;
 }
 .search-wrap :deep(input) { padding-left: 1.625rem; min-width: 220px; font-size: 0.8125rem; }
+.req-no { font-family: ui-monospace, monospace; font-weight: 600; }
 .filter { min-width: 200px; }
 .filter :deep(.p-select-label) { font-size: 0.8125rem; }
 .status-tabs :deep(.p-togglebutton) { font-size: 0.8125rem; padding: .3rem .7rem }

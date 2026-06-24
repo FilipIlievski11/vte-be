@@ -65,7 +65,11 @@ public class RequestsController : ControllerBase
         // so we don't blow EF's nullable-join translation or the 2100-parameter limit.
         if (!string.IsNullOrWhiteSpace(q))
         {
-            var like = $"%{q.Trim()}%";
+            var qTrim = q.Trim();
+            var like = $"%{qTrim}%";
+            // Request number: exact match on the Id (the "#" shown in the list) plus a
+            // partial match, and the legacy reference number (e.g. "168077128/2026").
+            long qIdExact = long.TryParse(qTrim, out var parsedId) ? parsedId : -1;
 
             // Matching client display name → relation ids (via Client join)
             var matchingClientIds = _db.Clients.AsNoTracking()
@@ -97,6 +101,9 @@ public class RequestsController : ControllerBase
             var unionRelationIds = relationsByClient.Union(relationsByVehicle);
 
             query = query.Where(r =>
+                r.Id == qIdExact ||
+                EF.Functions.Like(r.Id.ToString(), like) ||
+                (r.LegacyReferenceNumber != null && EF.Functions.Like(r.LegacyReferenceNumber, like)) ||
                 unionRelationIds.Contains(r.ClientVehicleRelationId) ||
                 matchingTypeIds.Contains(r.RequestTypeId));
         }

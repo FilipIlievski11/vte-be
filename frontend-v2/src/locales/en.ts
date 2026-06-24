@@ -214,6 +214,7 @@ export default {
     records: '{count} records',
     new: 'New request',
     allCompanies: 'All companies',
+    searchHint: 'Search by number, owner, vehicle or type…',
     loadFailed: 'Failed to load',
     deleted: 'Request deactivated',
     deleteConfirm: 'Deactivate request #{id}? You can reactivate from the edit form.',
