@@ -41,6 +41,17 @@ public class CustomerDebtsController : ControllerBase
         bool Paid, long? SettledByLineId,
         DateTime CreatedAt);
 
+    /// <summary>Substitute the {0}/{1} parametar-range placeholders in a legacy price-item
+    /// name with the rule's actual ParametarFrom/ParametarTo (rendered as whole numbers).
+    /// Uses Replace, not String.Format, so stray braces in the name can't throw.</summary>
+    private static string? FormatPriceName(string? name, double? from, double? to)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+        if (name.Contains("{0}")) name = name.Replace("{0}", from.HasValue ? ((long)from.Value).ToString() : "");
+        if (name.Contains("{1}")) name = name.Replace("{1}", to.HasValue ? ((long)to.Value).ToString() : "");
+        return name;
+    }
+
     /// <summary>
     /// Paged list of debts. Defaults to unpaid + active (the "Наплата" view).
     /// Sorted by client → vehicle → debt id so the frontend can group adjacent rows
@@ -108,9 +119,15 @@ public class CustomerDebtsController : ControllerBase
             .Where(m => makerIds.Contains(m.Id))
             .ToDictionaryAsync(m => m.Id, m => m.Name);
 
-        var priceCatalog = await _db.PriceCatalogs.AsNoTracking()
+        // Resolve the displayed price name. Legacy item names are String.Format templates
+        // with {0}/{1} placeholders for the matched parametar range (e.g.
+        // "за носивост од {0} до {1}"). Substitute the rule's ParametarFrom/ParametarTo so
+        // the Наплата panel shows the real range ("…од 3001 до 5000"), like the legacy app.
+        var priceCatalog = (await _db.PriceCatalogs.AsNoTracking()
             .Where(p => priceCatalogIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.Name);
+            .Select(p => new { p.Id, p.Name, p.ParametarFrom, p.ParametarTo })
+            .ToListAsync())
+            .ToDictionary(p => p.Id, p => FormatPriceName(p.Name, p.ParametarFrom, p.ParametarTo));
 
         string? makerModel(long vehicleId)
         {

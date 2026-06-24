@@ -73,7 +73,10 @@ const debtGroups = computed<DebtClientGroup[]>(() => {
     g.rows.push(d);
     if (!d.paid) { g.total += d.price; g.unpaidCount++; }   // paid rows stay listed but don't add to "owed"
   }
-  return out;
+  // Legacy parity: a client only appears in Наплата while it has at least one UNPAID
+  // debt. Paid rows still show inside an otherwise-open client (so billing one item
+  // doesn't make it vanish), but a fully-settled client (all paid) drops off entirely.
+  return out.filter(g => g.unpaidCount > 0);
 });
 
 async function refreshDebts() {
