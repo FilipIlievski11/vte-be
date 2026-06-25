@@ -731,7 +731,10 @@ public class RequestsController : ControllerBase
     public record ClientMeta(long Id, string? FullName, string? FirstName, string? MiddleName, string? LastName,
         string? MB, string? TaxNumber, string? Address, string? CityName, string? CommunityName, string? CountryName,
         string? CitizenshipName, string? PhoneNumber, string? Email,
-        bool? IsBusiness, DateTime? DateOfBirth);
+        bool? IsBusiness, DateTime? DateOfBirth,
+        // Plate prefix of the client's living community (legacy Communities.RegistrationCode,
+        // e.g. "VE"). Used by the Plav print to build the new-registration prefix "VE-".
+        string? CommunityRegistrationCode);
     public record VehicleMeta(long Id, string Vin, string? EngineNumber, string? Plate,
         string? Maker, string? Model, string? ModelCode, string? Variant, string? TypeText,
         string? BodyType, string? Category, string? CategoryForPayments, byte? CategoryZelenMap,
@@ -798,7 +801,7 @@ public class RequestsController : ControllerBase
         var relation = await _db.ClientVehicleRelations.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == r.ClientVehicleRelationId);
         ClientMeta clientMeta = await BuildClientMeta(relation?.ClientId)
-            ?? new ClientMeta(0, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            ?? new ClientMeta(0, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         VehicleMeta? vehicleMeta = await BuildVehicleMeta(relation?.VehicleId);
         RegistrationMeta? lastReg = await BuildLastRegistrationMeta(relation?.VehicleId);
         // Previous registration = the row whose plate matches the vehicle's stored
@@ -907,7 +910,7 @@ public class RequestsController : ControllerBase
             .Where(p => !string.IsNullOrWhiteSpace(p)));
 
         // City → Community → Country names are joined with their parent lookups.
-        string? cityName = null, communityName = null, countryName = null;
+        string? cityName = null, communityName = null, countryName = null, communityRegCode = null;
         if (c.CityId.HasValue)
         {
             var cy = await _db.Cities.AsNoTracking()
@@ -919,11 +922,12 @@ public class RequestsController : ControllerBase
                 cityName = cy.Name;
                 var comm = await _db.Communities.AsNoTracking()
                     .Where(x => x.Id == cy.CommunityId)
-                    .Select(x => new { x.Name, x.CountryId })
+                    .Select(x => new { x.Name, x.CountryId, x.PlateNumberPrefix })
                     .FirstOrDefaultAsync();
                 if (comm != null)
                 {
                     communityName = comm.Name;
+                    communityRegCode = string.IsNullOrWhiteSpace(comm.PlateNumberPrefix) ? null : comm.PlateNumberPrefix.Trim();
                     countryName = await _db.Countries.AsNoTracking()
                         .Where(x => x.Id == comm.CountryId)
                         .Select(x => x.Name).FirstOrDefaultAsync();
@@ -946,7 +950,8 @@ public class RequestsController : ControllerBase
             cityName, communityName, countryName,
             citizenshipName,
             c.PhoneNumber, c.Email,
-            c.Business, c.DateOfBirth);
+            c.Business, c.DateOfBirth,
+            communityRegCode);
     }
 
     private async Task<VehicleMeta?> BuildVehicleMeta(long? vehicleId)

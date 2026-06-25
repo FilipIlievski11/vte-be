@@ -462,13 +462,37 @@ async function loadRequest() {
       await loadRelationsForClient(rel.clientId);
     }
 
-    // Hydrate the "Нов сопственик" field for display from the stored relation.
+    // Hydrate the "Нов сопственик" field for display. NewClientVehicleRelationId is
+    // OVERLOADED (CLAUDE.md gotcha #17): a CLIENT id for migrated requests, a RELATION
+    // id for v2-native ones. Mirror the print backend's client-id-first resolution
+    // (RequestsController.PrintBundle): try it as a CLIENT id, but only accept that
+    // reading when the client actually owns a relation on the anchor vehicle — exactly
+    // the print's `isClientOnVehicle` gate. Otherwise fall back to relation-id lookup.
     if (r.newClientVehicleRelationId) {
-      const { data: nrel } = await api.get<VehicleRelationDto>(
-        `/client-vehicle-relations/${r.newClientVehicleRelationId}`,
-      ).catch(() => ({ data: null as unknown as VehicleRelationDto }));
-      if (nrel?.clientId)
-        newOwnerSel.value = toOwnerOpt(nrel.clientId, nrel.clientDisplayName, nrel.clientMb);
+      const ref = r.newClientVehicleRelationId;
+      const anchorVehicleId = rel?.vehicleId ?? selectedRelation.value?.vehicleId ?? null;
+      let resolved = false;
+      if (anchorVehicleId != null) {
+        try {
+          const { data: rels } = await api.get<VehicleRelationDto[]>('/client-vehicle-relations', {
+            params: { clientId: ref },
+          });
+          if (rels?.some(x => x.vehicleId === anchorVehicleId)) {
+            const { data: c } = await api.get<Client>(`/clients/${ref}`);
+            if (c?.id) {
+              newOwnerSel.value = toOwnerOpt(c.id, joinClientName(c), c.mb);
+              resolved = true;
+            }
+          }
+        } catch { /* not a client id (or no such client) — fall through to relation lookup */ }
+      }
+      if (!resolved) {
+        const { data: nrel } = await api.get<VehicleRelationDto>(
+          `/client-vehicle-relations/${ref}`,
+        ).catch(() => ({ data: null as unknown as VehicleRelationDto }));
+        if (nrel?.clientId)
+          newOwnerSel.value = toOwnerOpt(nrel.clientId, nrel.clientDisplayName, nrel.clientMb);
+      }
     }
   } catch (e: any) {
     toast.add({ severity: 'error', summary: t('clients.loadFailed'), detail: e?.message, life: 4000 });

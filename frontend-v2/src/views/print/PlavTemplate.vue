@@ -211,8 +211,15 @@ onMounted(() => {
 // New-registration prefix: legacy prints "{NewCommunityCode}-". The newest
 // registration row IS the newly-issued one (sentinel "{Code}-000-AA"), so
 // collapsing it gives "VE-". (lastRegistration = newest by ValidUntil.)
-const newRegValue = computed(() =>
-  plateOrPrefix(b().lastRegistration?.plateNumber || b().newVehicle?.plate));
+// Legacy lblNovaReg (PrintPlav.vb): for an IsNewRegistration type it prints the
+// NEW owner's community registration prefix ("{RegistrationCode}-", e.g. "VE-" for
+// Велес) — NOT the old plate. Fall back to the old plate/prefix only when there's
+// no new registration or the community code is missing.
+const newRegValue = computed(() => {
+  const regCode = regOwner.value?.communityRegistrationCode;
+  if (b().type.issuesNewRegistration && regCode) return `${regCode}-`;
+  return plateOrPrefix(b().lastRegistration?.plateNumber || b().newVehicle?.plate);
+});
 
 // Strip the migration's bookkeeping note (e.g. "[legacy operator ids C=119 …]").
 const cleanNote = computed(() => {
@@ -270,7 +277,9 @@ function joinProofs(list: { typeName: string | null; detail: string | null }[]):
 // Value resolvers — one per field key
 const v = computed(() => ({
   page1: {
-    printDate:     fmtDate(b().request.createdAt),
+    // Legacy XrPageInfo1 prints the print-machine clock (today), NOT createdAt —
+    // a reprint shows the date it was printed, not when the request was filed.
+    printDate:     fmtDate(new Date().toISOString()),
     // Destination MVR for the NEW registration = issuer of the newest reg row.
     toMvr:         b().lastRegistration?.issuer || '',
     newReg:        newRegValue.value,

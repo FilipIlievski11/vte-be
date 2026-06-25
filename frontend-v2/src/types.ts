@@ -431,6 +431,7 @@ export interface PrintClientMeta {
   email: string | null;
   isBusiness: boolean | null;
   dateOfBirth: string | null;
+  communityRegistrationCode: string | null;   // community plate prefix (e.g. "VE") for the Plav new-reg prefix
 }
 
 export interface PrintVehicleMeta {
