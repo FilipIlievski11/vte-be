@@ -666,8 +666,11 @@ public class PaymentDocumentsController : ControllerBase
     private static string Left(string s, int n) => s.Length <= n ? s : s[..n];
 
     /// <summary>Macedonian Cyrillic → Latin transliteration, ported from the legacy
-    /// KondnaTastaturaModule.ToLat (incl. digraphs); unmapped characters pass through.
-    /// Fixes the legacy off-by-one that left capital "А" untransliterated.</summary>
+    /// KondnaTastaturaModule.ToLat (incl. digraphs). Fixes the legacy off-by-one that
+    /// left capital "А" untransliterated. Unicode dashes (— –) fold to a plain "-", and
+    /// any other non-printable-ASCII char becomes "?" — the fiscal file is emitted by a
+    /// raw (byte)char cast, so a stray char > 126 would otherwise truncate to a garbage
+    /// (often control) byte in the Accent receipt (legacy relied on CP1251 here).</summary>
     private static string ToLat(string input)
     {
         var sb = new System.Text.StringBuilder(input.Length + 8);
@@ -686,7 +689,8 @@ public class PaymentDocumentsController : ControllerBase
                 'Ѕ' => "DZ", 'ѕ' => "dz", 'Љ' => "LJ", 'љ' => "lj", 'Њ' => "NJ", 'њ' => "nj",
                 'Ѓ' => "GJ", 'ѓ' => "gj", 'Ж' => "ZH", 'ж' => "zh", 'Ќ' => "KJ", 'ќ' => "kj",
                 'Ч' => "CH", 'ч' => "ch", 'Ш' => "SH", 'ш' => "sh", 'Џ' => "DJ", 'џ' => "dj",
-                _ => ch.ToString(),
+                '—' or '–' or '―' or '‒' => "-",   // Unicode dashes → ASCII hyphen (legacy printed these via CP1251)
+                _ => ch is >= ' ' and <= '~' ? ch.ToString() : "?",  // keep printable ASCII; never emit a stray > 126 byte
             });
         }
         return sb.ToString();
