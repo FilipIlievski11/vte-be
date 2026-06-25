@@ -2,7 +2,7 @@
 
 You're working on **VTE** — a multi-tenant SaaS rewrite (.NET 10 + Vue 3) of a legacy VB.NET WinForms vehicle-inspection system used in Macedonia. The repo holds the new code (`backend-v2/`, `frontend-v2/`), the legacy code (`VTE/`, `WinApp/`, etc.) kept for parity-checking, and SQL migration scripts (`migrate/`).
 
-Read [`README.md`](README.md) for repo layout, [`db/README.md`](db/README.md) for fresh-machine setup, and [`migrate/README.md`](migrate/README.md) to import real data.
+Read [`README.md`](README.md) for repo layout, [`db/README.md`](db/README.md) for fresh-machine setup, and [`migrate/README.md`](migrate/README.md) to import real data. **Full reference docs live in [`docs/`](docs/README.md)** — architecture, every module, fiscal, prints, deployment, migration, and an operator guide.
 
 ## Stack at a glance
 
