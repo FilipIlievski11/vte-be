@@ -167,6 +167,10 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnType("tinyint").ValueGeneratedOnAdd();
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            // Restored community link (no FK — legacy data may reference communities
+            // not present in the lookup). Used to resolve the destination MVR office.
+            e.Property(x => x.CommunityId);
+            e.HasIndex(x => x.CommunityId);
         });
 
         b.Entity<PersonalDataType>(e =>

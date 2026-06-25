@@ -280,8 +280,10 @@ const v = computed(() => ({
     // Legacy XrPageInfo1 prints the print-machine clock (today), NOT createdAt —
     // a reprint shows the date it was printed, not when the request was filed.
     printDate:     fmtDate(new Date().toISOString()),
-    // Destination MVR for the NEW registration = issuer of the newest reg row.
-    toMvr:         b().lastRegistration?.issuer || '',
+    // Destination MVR ("ДО МВР") = the registration issuer of the NEW owner's
+    // community (legacy lblToOrganization = GetRegistrationIssuerInfoByCommunity),
+    // NOT the old registration's issuer. Blank when the community has no issuer.
+    toMvr:         regOwner.value?.communityRegistrationIssuer || '',
     newReg:        newRegValue.value,
     variantMark:   '✕',
     // PREVIOUS registration block — the old plate + its issuer + validity.
@@ -349,9 +351,9 @@ const v = computed(() => ({
     z237: numZ(b().vehicle?.noiseStaticDb),                   // noise (static, dB)
   },
   page3: {
-    // New registration — issuer + plate from the newest registration row.
-    // Legacy shows the raw "VE-000-AA" on page 3, so we DON'T collapse it here.
-    newRegIssuer:  b().lastRegistration?.issuer || '',
+    // New-registration issuer = the NEW owner's community MVR office (same source as
+    // page-1 "ДО МВР"), not the old registration's issuer. Plate stays the newest row.
+    newRegIssuer:  regOwner.value?.communityRegistrationIssuer || '',
     newPlate:      b().lastRegistration?.plateNumber || b().newVehicle?.plate || '',
     // New owner (newClient). Macedonian convention as above.
     newSurname:    regOwner.value?.firstName || '',

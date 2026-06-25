@@ -432,6 +432,7 @@ export interface PrintClientMeta {
   isBusiness: boolean | null;
   dateOfBirth: string | null;
   communityRegistrationCode: string | null;   // community plate prefix (e.g. "VE") for the Plav new-reg prefix
+  communityRegistrationIssuer: string | null;  // destination MVR office for the community (e.g. "МВР ВЕЛЕС")
 }
 
 export interface PrintVehicleMeta {
