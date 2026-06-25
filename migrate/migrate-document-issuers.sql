@@ -3,9 +3,12 @@
 -- Source: (localdb)\MSSQLLocalDB\VTEZVV_Snapshot.dbo.RegistrationIssuers
 -- Target: (localdb)\MSSQLLocalDB\VTE.dbo.DocumentIssuer
 --
--- Preserves legacy Ids exactly. Drops the legacy IdCommunity column (no
--- equivalent in the new schema). Legacy Id is INT but new schema is TINYINT
--- (max 255) — script reports if any legacy Id exceeds 255 and skips it.
+-- Preserves legacy Ids exactly. The legacy IdCommunity link is NOT copied here,
+-- but it IS needed for the Plav print's destination MVR — run
+-- migrate/backfill-document-issuer-community.sql AFTER this to restore
+-- DocumentIssuer.CommunityId (added by EF migration AddDocumentIssuerCommunityId).
+-- Legacy Id is INT but new schema is TINYINT (max 255) — script reports if any
+-- legacy Id exceeds 255 and skips it.
 --
 -- Idempotent — wipes target first. Refuses to wipe if any ClientPersonalData
 -- row references a DocumentIssuer.
