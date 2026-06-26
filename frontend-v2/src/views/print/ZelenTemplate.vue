@@ -244,7 +244,10 @@ const v = computed(() => ({
     address:        b().client?.address ? `УЛ. ${b().client!.address}` : '',
     community:      b().client?.communityName || b().client?.cityName || '',
     embg:           b().client?.mb || '',
-    validUntil:     fmtDate(b().lastRegistration?.validUntil),
+    // A1 "Регистрација важи до" = the vehicle's authoritative last-registration expiry
+    // (legacy Vehicles.LastRegistrationValidTill). Prefer it over the VehicleRegistration
+    // row, which for some vehicles is only a "{Code}-000-AA" sentinel placeholder.
+    validUntil:     fmtDate(b().vehicle?.lastRegistrationValidUntil || b().lastRegistration?.validUntil),
     // Join ALL proofs with "; " like the legacy single label — e.g.
     // "СООБРАЌАЈНА ДОЗВОЛА 2446652; ДОГОВОР" (not just the first row).
     ownershipProof: b().ownershipProofs.map(p => [p.typeName, p.detail].filter(Boolean).join(' ')).filter(Boolean).join('; '),

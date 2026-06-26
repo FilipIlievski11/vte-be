@@ -145,7 +145,7 @@ PRINT CONCAT('  -> ', @rows, ' new VehicleModels.');
 PRINT '=== Vehicle ===';
 SET IDENTITY_INSERT dbo.Vehicle ON;
 INSERT INTO dbo.Vehicle (
-  Id, CompanyId, Vin, EngineNumber, Plate,
+  Id, CompanyId, Vin, EngineNumber, Plate, LastRegistrationValidUntil,
   CategoryId, BodyTypeId, ModelId, PrimaryColorId, SecondaryColorId, MadeCountryId,
   FuelId, SecondFuelId, EngineTypeId, EcoProgramId, PaymentCategoryId,
   EnginePowerKw, EngineWorkingCapacityCc, MaxRpm, MaxSpeedKmh, HasLpg, ManufactureDate,
@@ -161,6 +161,7 @@ SELECT
   COALESCE(NULLIF(LTRIM(RTRIM(v.ShellNumber)), N''), N''),
   NULLIF(LTRIM(RTRIM(v.EngineNumber)),          N''),
   NULLIF(LTRIM(RTRIM(v.LastRegistratinNumber)), N''),
+  CASE WHEN v.LastRegistrationValidTill > '1900-01-01' AND v.LastRegistrationValidTill < '2100-01-01' THEN v.LastRegistrationValidTill END,
   cat.Id, bt.Id, mdl.Id, col1.Id, col2.Id, co.Id,
   f1.Id, f2.Id, et.Id, eco.Id, pc.Id,
   NULLIF(v.EnginePowerOutPut, 0), NULLIF(v.EngineWorkingCapacity, 0), NULLIF(v.BrojNaVrtezi, 0), NULLIF(v.MaxSpeed, 0), v.TNG, v.MakeDate,

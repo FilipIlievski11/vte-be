@@ -484,6 +484,7 @@ export interface PrintVehicleMeta {
   maxTrailerUnbrakedKg: number | null;     // legacy MaxKonstVkMasaNeKocnaPrikolka
   maxHitchLoadKg: number | null;           // legacy MaxKonstOptovaruvanjeVoPriklucok
   approvalMark: string | null;
+  lastRegistrationValidUntil: string | null;  // legacy Vehicles.LastRegistrationValidTill — the reg expiry the forms print
 }
 
 export interface RequestPrintBundle {

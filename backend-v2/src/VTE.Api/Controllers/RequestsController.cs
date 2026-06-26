@@ -763,7 +763,10 @@ public class RequestsController : ControllerBase
         float? Co2GKm, float? NoiseStaticDb,
         int? AxleLoad1Kg, int? AxleLoad2Kg,
         float? MaxTrailerBrakedKg, float? MaxTrailerUnbrakedKg, float? MaxHitchLoadKg,
-        string? ApprovalMark);
+        string? ApprovalMark,
+        // Authoritative last-registration expiry (legacy Vehicles.LastRegistrationValidTill).
+        // The forms print this, not the VehicleRegistration row (which may be a sentinel).
+        DateTime? LastRegistrationValidUntil);
     public record RegistrationMeta(long Id, string PlateNumber, DateTime RegisteredDate, DateTime ValidUntil, string? Issuer);
     public record ProofMeta(long Id, string? TypeName, string? Detail);
     public record CompanyMeta(byte Id, string Name, string? CommunityName);
@@ -995,7 +998,7 @@ public class RequestsController : ControllerBase
                 x.Co2GKm, x.NoiseStaticDb,
                 x.AxleLoad1Kg, x.AxleLoad2Kg,
                 x.MaxTrailerBrakedKg, x.MaxTrailerUnbrakedKg, x.MaxHitchLoadKg,
-                x.ApprovalMark,
+                x.ApprovalMark, x.LastRegistrationValidUntil,
             })
             .FirstOrDefaultAsync();
         if (v == null) return null;
@@ -1111,7 +1114,7 @@ public class RequestsController : ControllerBase
             v.Co2GKm, v.NoiseStaticDb,
             v.AxleLoad1Kg, v.AxleLoad2Kg,
             v.MaxTrailerBrakedKg, v.MaxTrailerUnbrakedKg, v.MaxHitchLoadKg,
-            v.ApprovalMark);
+            v.ApprovalMark, v.LastRegistrationValidUntil);
     }
 
     private async Task<RegistrationMeta?> BuildLastRegistrationMeta(long? vehicleId)

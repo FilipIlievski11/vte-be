@@ -64,7 +64,7 @@ PRINT '=== Vehicles (preserve Ids, CompanyId=4) ===';
 SET IDENTITY_INSERT dbo.Vehicle ON;
 INSERT INTO dbo.Vehicle (
   Id, CompanyId,
-  Vin, EngineNumber, Plate,
+  Vin, EngineNumber, Plate, LastRegistrationValidUntil,
   CategoryId, BodyTypeId, ModelId, PrimaryColorId, SecondaryColorId, MadeCountryId,
   FuelId, SecondFuelId, EngineTypeId, EcoProgramId, PaymentCategoryId,
   EnginePowerKw, EngineWorkingCapacityCc, MaxRpm, MaxSpeedKmh, HasLpg,
@@ -84,6 +84,8 @@ SELECT
   COALESCE(NULLIF(LTRIM(RTRIM(v.ShellNumber)), N''), N'')               AS Vin,
   NULLIF(LTRIM(RTRIM(v.EngineNumber)),         N'')                     AS EngineNumber,
   NULLIF(LTRIM(RTRIM(v.LastRegistratinNumber)),N'')                     AS Plate,
+  CASE WHEN v.LastRegistrationValidTill > '1900-01-01' AND v.LastRegistrationValidTill < '2100-01-01'
+       THEN v.LastRegistrationValidTill END                             AS LastRegistrationValidUntil,
 
   CASE WHEN cat.Id IS NOT NULL THEN cat.Id  END                         AS CategoryId,
   CASE WHEN bt.Id  IS NOT NULL THEN bt.Id   END                         AS BodyTypeId,

@@ -291,7 +291,9 @@ const v = computed(() => ({
     // come from the matching previous-registration row (NOT the newest).
     curPlate:      plateOrPrefix(b().previousRegistration?.plateNumber || b().vehicle?.plate),
     curIssuer:     b().previousRegistration?.issuer || '',
-    curValidTill:  fmtDate(b().previousRegistration?.validUntil),
+    // Prefer the vehicle's authoritative last-registration expiry (legacy
+    // Vehicles.LastRegistrationValidTill); the registration row may be a sentinel.
+    curValidTill:  fmtDate(b().vehicle?.lastRegistrationValidUntil || b().previousRegistration?.validUntil),
     // Macedonian DB: firstName = surname (Презиме), lastName = given name (Име).
     curSurname:    b().client?.firstName || '',
     curName:       b().client?.lastName || '',

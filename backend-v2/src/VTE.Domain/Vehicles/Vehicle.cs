@@ -15,6 +15,10 @@ public class Vehicle : ITenantOwned
     public string Vin { get; set; } = string.Empty;          // legacy ShellNumber
     public string? EngineNumber { get; set; }
     public string? Plate { get; set; }                       // legacy LastRegistratinNumber
+    public DateTime? LastRegistrationValidUntil { get; set; } // legacy Vehicles.LastRegistrationValidTill — the
+                                                              // authoritative reg-expiry the MVR forms print
+                                                              // (the VehicleRegistration table can hold only a
+                                                              // sentinel {Code}-000-AA placeholder for some vehicles)
 
     // Lookups
     public short? CategoryId { get; set; }
