@@ -548,6 +548,15 @@ html.app-dark {
   --p-form-field-color:                var(--color-text);
   --p-form-field-placeholder-color:    var(--color-text-muted);
   --p-form-field-disabled-background:  var(--color-surface);
+  /* DataTable surfaces. The striped-row token defaults to a bright #f8fafc, so in dark
+     mode every other row was a light band with light text on it (invisible). */
+  --p-datatable-header-cell-background:   var(--color-surface-2);
+  --p-datatable-header-cell-color:        var(--color-text-secondary);
+  --p-datatable-row-background:           var(--color-surface);
+  --p-datatable-row-striped-background:   var(--color-surface-2);
+  --p-datatable-row-hover-background:     rgba(59, 130, 246, 0.12);
+  --p-datatable-row-color:                var(--color-text);
+  --p-datatable-body-cell-border-color:   var(--color-border);
 }
 html.app-dark .error {
   background: rgba(239, 68, 68, 0.16);
