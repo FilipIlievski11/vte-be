@@ -34,6 +34,11 @@ function fmtDate(s: string | null | undefined): string {
 function num(v: number | null | undefined): string {
   return v == null ? '' : String(Math.round(v));
 }
+// Like num() but renders "0" for null — the legacy Zelen prints "0" for the mass/seat
+// fields (G Маса, S.1 Седишта, S.2 Стоење) even when our migration nulled the zero.
+function numZ(v: number | null | undefined): string {
+  return v == null ? '0' : String(Math.round(v));
+}
 // Decimal with Macedonian comma separator, no rounding / trailing zeros.
 // e.g. 3.3 → "3,3", 55 → "55". Used for engine power (P.2) which the legacy
 // printout shows with the fractional part (e.g. "3,3"), unlike the rounded fields.
@@ -278,11 +283,11 @@ const v = computed(() => ({
     engineNumber:      b().vehicle?.engineNumber || '',
     powerKw:           dec(b().vehicle?.enginePowerKw),
     cc:                num(b().vehicle?.engineWorkingCapacityCc),
-    mass:              num(b().vehicle?.emptyWeightKg),
-    seats:             num(b().vehicle?.seats),
-    // S.2 Број места за стоење — legacy always shows a number (0 for passenger
-    // cars). If our migration nulled-out zeros, fall back to '0'.
-    standingSeats:     b().vehicle?.standingSeats != null ? String(b().vehicle!.standingSeats) : '0',
+    // G Маса / S.1 Седишта / S.2 Стоење — legacy always prints a number (0 when empty);
+    // our migration nulls zeros, so render "0" for null.
+    mass:              numZ(b().vehicle?.emptyWeightKg),
+    seats:             numZ(b().vehicle?.seats),
+    standingSeats:     numZ(b().vehicle?.standingSeats),
     category:          b().vehicle?.category || '',
 
     // Б section "промена на податоци за сопственикот" binds to the NEW owner in
