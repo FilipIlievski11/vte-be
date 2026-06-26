@@ -71,13 +71,19 @@ public class ClientVehicleRelationsController : ControllerBase
                           .Where(v => v.ModelId.HasValue && matchingModelIds.Contains(v.ModelId.Value)),
                       r => r.VehicleId!.Value, v => v.Id, (r, v) => r.Id);
 
-            var clientHitIds = _db.Clients.AsNoTracking()
-                .Where(c =>
-                    (c.FirstName  != null && EF.Functions.Like(c.FirstName,  like)) ||
-                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, like)) ||
-                    (c.LastName   != null && EF.Functions.Like(c.LastName,   like)) ||
-                    (c.MB         != null && EF.Functions.Like(c.MB,         like)))
-                .Select(c => c.Id);
+            // Tokenized owner-name match so a full name works in ANY word order
+            // (FirstName=surname / LastName=given are separate columns).
+            var clientNameQuery = _db.Clients.AsNoTracking().AsQueryable();
+            foreach (var token in q.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(6))
+            {
+                var clike = $"%{token}%";
+                clientNameQuery = clientNameQuery.Where(c =>
+                    (c.FirstName  != null && EF.Functions.Like(c.FirstName,  clike)) ||
+                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, clike)) ||
+                    (c.LastName   != null && EF.Functions.Like(c.LastName,   clike)) ||
+                    (c.MB         != null && EF.Functions.Like(c.MB,         clike)));
+            }
+            var clientHitIds = clientNameQuery.Select(c => c.Id);
             var hitByClient = _db.ClientVehicleRelations.AsNoTracking()
                 .Where(r => clientHitIds.Contains(r.ClientId))
                 .Select(r => r.Id);

@@ -60,12 +60,20 @@ public class ClientsController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(term))
         {
-            var s = term.Trim();
-            query = query.Where(c =>
-                (c.FirstName != null && EF.Functions.Like(c.FirstName, $"%{s}%")) ||
-                (c.LastName != null && EF.Functions.Like(c.LastName, $"%{s}%")) ||
-                (c.MB != null && EF.Functions.Like(c.MB, $"%{s}%")) ||
-                (c.TaxNumber != null && EF.Functions.Like(c.TaxNumber, $"%{s}%")));
+            // Tokenized search: EVERY whitespace-separated word must match some field, so a
+            // full name works in ANY word order — FirstName=surname (Презиме) and
+            // LastName=given (Име) are stored separately, so "Филип Илиевски" and
+            // "Илиевски Филип" both hit. A lone EMBG/tax number is a single token and matches too.
+            foreach (var token in term.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(6))
+            {
+                var like = $"%{token}%";
+                query = query.Where(c =>
+                    (c.FirstName != null && EF.Functions.Like(c.FirstName, like)) ||
+                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, like)) ||
+                    (c.LastName != null && EF.Functions.Like(c.LastName, like)) ||
+                    (c.MB != null && EF.Functions.Like(c.MB, like)) ||
+                    (c.TaxNumber != null && EF.Functions.Like(c.TaxNumber, like)));
+            }
         }
 
         var total = await query.CountAsync();

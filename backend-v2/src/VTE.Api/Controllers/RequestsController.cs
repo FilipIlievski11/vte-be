@@ -71,14 +71,20 @@ public class RequestsController : ControllerBase
             // partial match, and the legacy reference number (e.g. "168077128/2026").
             long qIdExact = long.TryParse(qTrim, out var parsedId) ? parsedId : -1;
 
-            // Matching client display name → relation ids (via Client join)
-            var matchingClientIds = _db.Clients.AsNoTracking()
-                .Where(c =>
-                    (c.FirstName != null && EF.Functions.Like(c.FirstName, like)) ||
-                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, like)) ||
-                    (c.LastName != null && EF.Functions.Like(c.LastName, like)) ||
-                    (c.MB != null && EF.Functions.Like(c.MB, like)))
-                .Select(c => c.Id);
+            // Matching client display name → relation ids (via Client join). Tokenized so a
+            // full owner name matches in ANY word order (FirstName=surname / LastName=given
+            // are separate columns).
+            var clientNameQuery = _db.Clients.AsNoTracking().AsQueryable();
+            foreach (var token in qTrim.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(6))
+            {
+                var clike = $"%{token}%";
+                clientNameQuery = clientNameQuery.Where(c =>
+                    (c.FirstName != null && EF.Functions.Like(c.FirstName, clike)) ||
+                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, clike)) ||
+                    (c.LastName != null && EF.Functions.Like(c.LastName, clike)) ||
+                    (c.MB != null && EF.Functions.Like(c.MB, clike)));
+            }
+            var matchingClientIds = clientNameQuery.Select(c => c.Id);
             var relationsByClient = _db.ClientVehicleRelations.AsNoTracking()
                 .Where(r => matchingClientIds.Contains(r.ClientId))
                 .Select(r => r.Id);
