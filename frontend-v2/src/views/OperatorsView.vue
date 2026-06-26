@@ -223,7 +223,7 @@ const skeletonRows = Array.from({ length: 8 });
     <div class="actions">
       <span class="search-wrap">
         <i class="pi pi-search" />
-        <InputText v-model="q" :placeholder="t('operators.searchPlaceholder')" size="small" />
+        <InputText v-model="q" :placeholder="t('common.search')" size="small" />
       </span>
       <Select
         v-model="companyFilter"

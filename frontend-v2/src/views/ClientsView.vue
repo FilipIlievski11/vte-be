@@ -140,7 +140,7 @@ const skeletonRows = Array.from({ length: 8 });
     <div class="actions">
       <span class="search-wrap">
         <i class="pi pi-search" />
-        <InputText ref="searchInput" v-model="q" :placeholder="t('clients.searchPlaceholder')" size="small" />
+        <InputText ref="searchInput" v-model="q" :placeholder="t('common.search')" size="small" />
       </span>
       <Select
         v-model="business"

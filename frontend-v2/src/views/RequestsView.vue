@@ -161,7 +161,7 @@ const skeletonRows = Array.from({ length: 8 });
       />
       <span class="search-wrap">
         <i class="pi pi-search" />
-        <InputText v-model="q" :placeholder="t('requests.searchHint')" size="small" style="min-width:300px" />
+        <InputText v-model="q" :placeholder="t('common.search')" size="small" style="min-width:300px" />
       </span>
       <Select
         v-if="auth.isAdmin"

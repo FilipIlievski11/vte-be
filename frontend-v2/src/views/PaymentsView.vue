@@ -124,7 +124,7 @@ const skeletonRows = Array.from({ length: 8 });
       />
       <span class="search-wrap">
         <i class="pi pi-search" />
-        <InputText v-model="q" :placeholder="t('payments.searchPlaceholder')" size="small" />
+        <InputText v-model="q" :placeholder="t('common.search')" size="small" />
       </span>
       <Select
         v-model="typeFilter"

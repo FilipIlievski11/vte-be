@@ -266,7 +266,7 @@ onMounted(async () => {
     <aside class="cat-rail">
       <div class="cat-search">
         <i class="pi pi-search" />
-        <InputText v-model="catSearch" :placeholder="t('prices.cat.search')" />
+        <InputText v-model="catSearch" :placeholder="t('common.search')" />
       </div>
 
       <button class="cat-item" :class="{ active: isCatSelected(undefined) }" @click="selectCat(undefined)">
@@ -303,7 +303,7 @@ onMounted(async () => {
         <span class="spacer" />
         <span class="p-input-icon-left rule-search">
           <i class="pi pi-search" />
-          <InputText v-model="ruleSearch" :placeholder="t('prices.filter.search')" />
+          <InputText v-model="ruleSearch" :placeholder="t('common.search')" />
         </span>
         <Select v-model="filterTrigger" :options="triggerFilterOptions"
           optionLabel="label" optionValue="value"
