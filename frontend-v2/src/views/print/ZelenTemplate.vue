@@ -197,7 +197,9 @@ const variantY = computed(() => {
 // Value resolvers — one per field key
 const v = computed(() => ({
   page1: {
-    printDate:      fmtDate(b().request.createdAt),
+    // Legacy prints the print-machine clock (today), NOT the request's createdAt —
+    // a reprint shows the date it was printed.
+    printDate:      fmtDate(new Date().toISOString()),
     // "ДО МВР - ОУР" = the destination MVR office. Legacy printZelen.vb resolves it from
     // the (new) owner's community via GetRegistrationIssuerInfoByCommunity — offices are
     // named "МВР {ОПШТИНА}" (e.g. owner in Велес → "МВР ВЕЛЕС"). Do NOT use the
@@ -250,11 +252,16 @@ const v = computed(() => ({
     company:        b().company?.name?.trim() || '',
     // Reference number — legacy formula is:
     //   {StationCode}{IdTechnicalExamReport}{OperatorId}/{Year}
-    // Backfilled from snapshot via backfill-request-reference-no.sql.
-    // Falls back to {requestId}/{year} for new (post-cutover) requests until
-    // we build the Technical Exam module.
-    referenceNo:    b().request.legacyReferenceNumber
-                    || `${b().request.id}/${new Date(b().request.createdAt).getFullYear()}`,
+    // StationCode is empty here and there's no exam report, so it collapses to
+    // "0{OperatorId}/{Year}". The OperatorId is the PRINT-time employee (not stored),
+    // so use the created-by legacy operator parsed from the note ("C=NNN") as the
+    // closest stable proxy: "0{op}/{year}". Falls back to {id}/{year} if no note op.
+    referenceNo:    (() => {
+                       if (b().request.legacyReferenceNumber) return b().request.legacyReferenceNumber;
+                       const year = new Date(b().request.createdAt).getFullYear();
+                       const m = (b().request.note || '').match(/C=(\d+)/i);
+                       return m ? `0${m[1]}/${year}` : `${b().request.id}/${year}`;
+                     })(),
   },
   page2: {
     engineType:        b().vehicle?.engineTypeName || '',
