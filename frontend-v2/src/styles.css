@@ -572,6 +572,14 @@ html.app-dark {
      OWN background token defaulting to #fff — that was the white box with invisible
      light text. Make the raised selected pill a lighter dark instead. */
   --p-togglebutton-content-checked-background: var(--color-border);
+  /* Outlined secondary buttons (topbar Back / Sign out, etc.): hover bg defaulted to
+     near-white (#f8fafc) — a jarring white box on hover — with a near-white border and
+     dim text. Give them a subtle light-overlay hover + a softer border + readable text. */
+  --p-button-outlined-secondary-color:             var(--color-text-secondary);
+  --p-button-outlined-secondary-border-color:      var(--color-border-strong);
+  --p-button-outlined-secondary-hover-background:   rgba(255, 255, 255, 0.08);
+  --p-button-outlined-secondary-hover-border-color: var(--color-border-strong);
+  --p-button-outlined-secondary-active-background:  rgba(255, 255, 255, 0.14);
 }
 html.app-dark .error {
   background: rgba(239, 68, 68, 0.16);
