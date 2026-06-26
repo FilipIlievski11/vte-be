@@ -19,7 +19,12 @@ app.use(PrimeVue, {
   theme: {
     preset: Aura,
     options: {
-      darkModeSelector: '.dark-mode',
+      // The app toggles `html.app-dark` (AppLayout), so scope PrimeVue's dark palette
+      // to that class — otherwise NONE of PrimeVue's --p-* tokens flip and every overlay
+      // (dropdowns, dialogs, menus, datepickers…) renders light in dark mode. The custom
+      // --p-* overrides in styles.css are more specific (html.app-dark) and still win for
+      // the families they tune; this fills in everything else.
+      darkModeSelector: '.app-dark',
     },
   },
   ripple: false,
