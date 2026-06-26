@@ -556,7 +556,22 @@ html.app-dark {
   --p-datatable-row-striped-background:   var(--color-surface-2);
   --p-datatable-row-hover-background:     rgba(59, 130, 246, 0.12);
   --p-datatable-row-color:                var(--color-text);
+  --p-datatable-row-hover-color:          var(--color-text);
   --p-datatable-body-cell-border-color:   var(--color-border);
+  /* Segmented toggle buttons (the MK/EN language switch + any SelectButton) —
+     all togglebutton tokens default light, so the pill stayed white in dark mode. */
+  --p-togglebutton-background:            var(--color-surface-2);
+  --p-togglebutton-color:                 var(--color-text-secondary);
+  --p-togglebutton-border-color:          var(--color-border);
+  --p-togglebutton-hover-background:      var(--color-surface);
+  --p-togglebutton-hover-color:           var(--color-text);
+  --p-togglebutton-checked-background:    var(--color-border);
+  --p-togglebutton-checked-color:         var(--color-text);
+  --p-togglebutton-checked-border-color:  var(--color-border-strong);
+  /* The SELECTED segment is the inner .p-togglebutton-content pill, which has its
+     OWN background token defaulting to #fff — that was the white box with invisible
+     light text. Make the raised selected pill a lighter dark instead. */
+  --p-togglebutton-content-checked-background: var(--color-border);
 }
 html.app-dark .error {
   background: rgba(239, 68, 68, 0.16);
