@@ -27,9 +27,9 @@ UPDATE v
   SET v.LastRegistrationValidUntil = src.D
 FROM dbo.Vehicle v
 JOIN OPENQUERY(VTEZVV_LIVE,
-  'SELECT Id, LastRegistrationValidTill
+  'SELECT Id, LastRegistrationValidTill AS D
      FROM VTEZVV.dbo.Vehicles
-    WHERE LastRegistrationValidTill > ''1900-01-01'' AND LastRegistrationValidTill < ''2100-01-01''') src(Id, D)
+    WHERE LastRegistrationValidTill > ''1900-01-01'' AND LastRegistrationValidTill < ''2100-01-01''') AS src
   ON src.Id = v.Id
 WHERE v.LastRegistrationValidUntil IS NULL
    OR v.LastRegistrationValidUntil <> src.D;
