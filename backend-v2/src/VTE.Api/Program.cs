@@ -163,9 +163,23 @@ var webRoot = app.Environment.WebRootPath
     ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
 if (File.Exists(Path.Combine(webRoot, "index.html")))
 {
+    // Cache policy: hashed bundles under /assets are immutable (cache for a year);
+    // everything else — crucially index.html — must revalidate on every load so an
+    // open browser picks up new bundle names right after a redeploy (stale chunk
+    // names in a cached index caused 404 chaos on lazy-loaded routes).
+    var staticOptions = new StaticFileOptions
+    {
+        OnPrepareResponse = ctx =>
+        {
+            var headers = ctx.Context.Response.Headers;
+            headers.CacheControl = ctx.Context.Request.Path.StartsWithSegments("/assets")
+                ? "public, max-age=31536000, immutable"
+                : "no-cache";
+        }
+    };
     app.UseDefaultFiles();
-    app.UseStaticFiles();
-    app.MapFallbackToFile("index.html");
+    app.UseStaticFiles(staticOptions);
+    app.MapFallbackToFile("index.html", staticOptions);
 }
 else
 {

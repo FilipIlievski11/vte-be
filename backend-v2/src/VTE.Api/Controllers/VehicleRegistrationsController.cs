@@ -16,7 +16,7 @@ public class VehicleRegistrationsController : ControllerBase
     public VehicleRegistrationsController(VteDbContext db) => _db = db;
 
     public record VehicleRegistrationDto(
-        long Id, long VehicleId, byte IssuerId, string? IssuerName,
+        long Id, long VehicleId, byte? IssuerId, string? IssuerName,
         string PlateNumber, DateTime RegisteredDate, DateTime ValidUntil,
         bool IsFirstRegistration, bool Active);
 
@@ -32,13 +32,13 @@ public class VehicleRegistrationsController : ControllerBase
         if (vehicleId.HasValue) q = q.Where(r => r.VehicleId == vehicleId.Value);
 
         var rows = await q.OrderByDescending(r => r.RegisteredDate).Take(500).ToListAsync();
-        var issuerIds = rows.Select(r => r.IssuerId).Distinct().ToList();
+        var issuerIds = rows.Where(r => r.IssuerId.HasValue).Select(r => r.IssuerId!.Value).Distinct().ToList();
         var issuers = await _db.DocumentIssuers.AsNoTracking()
             .Where(d => issuerIds.Contains(d.Id))
             .ToDictionaryAsync(d => d.Id, d => d.Name);
 
         return Ok(rows.Select(r => new VehicleRegistrationDto(
-            r.Id, r.VehicleId, r.IssuerId, issuers.GetValueOrDefault(r.IssuerId),
+            r.Id, r.VehicleId, r.IssuerId, r.IssuerId.HasValue ? issuers.GetValueOrDefault(r.IssuerId.Value) : null,
             r.PlateNumber, r.RegisteredDate, r.ValidUntil, r.IsFirstRegistration, r.Active)).ToList());
     }
 

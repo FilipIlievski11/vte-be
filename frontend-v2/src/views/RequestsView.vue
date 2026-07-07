@@ -3,15 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { openPrintTab } from '@/utils/print';
 import { useAuthStore } from '@/stores/auth';
-import type { Company, Paged, RequestListItem } from '@/types';
+import type { Company, Paged, RequestListItem, RequestType } from '@/types';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import SelectButton from 'primevue/selectbutton';
-import Tag from 'primevue/tag';
 import Skeleton from 'primevue/skeleton';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -33,6 +33,8 @@ const q = ref('');
 const status = ref<Status>('open');
 const companyFilter = ref<number | null>(null);
 const companies = ref<Company[]>([]);
+const requestTypeFilter = ref<number | null>(null);
+const requestTypes = ref<RequestType[]>([]);
 const page = ref(1);
 const pageSize = ref(50);
 const sortField = ref<string>('created');
@@ -49,6 +51,16 @@ const companyOptions = computed(() => [
   ...companies.value,
 ]);
 
+// Type filter (all users). Show only assignable (leaf) types — the ones requests
+// actually use — not the organizational group/parent nodes. Sorted by name.
+const requestTypeOptions = computed(() => {
+  const parentIds = new Set(requestTypes.value.map(t => t.parentRequestTypeId).filter((x): x is number => x != null));
+  return requestTypes.value
+    .filter(t => !parentIds.has(t.id))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'mk'));
+});
+
 let searchTimer: number | undefined;
 let loadToken = 0;
 
@@ -56,6 +68,11 @@ async function loadCompanies() {
   if (!auth.isAdmin) return;
   try { companies.value = (await api.get<Company[]>('/companies')).data; }
   catch { /* ignore */ }
+}
+
+async function loadRequestTypes() {
+  try { requestTypes.value = (await api.get<RequestType[]>('/request-types', { params: { activeOnly: true } })).data; }
+  catch { /* ignore — filter just stays empty */ }
 }
 
 async function load() {
@@ -67,6 +84,7 @@ async function load() {
         q: q.value || undefined,
         status: status.value,
         companyId: companyFilter.value ?? undefined,
+        requestTypeId: requestTypeFilter.value ?? undefined,
         sort: sortField.value,
         dir: sortOrder.value === 1 ? 'asc' : 'desc',
         page: page.value,
@@ -84,7 +102,7 @@ async function load() {
   }
 }
 
-onMounted(async () => { await loadCompanies(); await load(); });
+onMounted(async () => { await Promise.all([loadCompanies(), loadRequestTypes()]); await load(); });
 
 watch(q, () => {
   window.clearTimeout(searchTimer);
@@ -92,6 +110,7 @@ watch(q, () => {
 });
 watch(status, () => { page.value = 1; load(); });
 watch(companyFilter, () => { page.value = 1; load(); });
+watch(requestTypeFilter, () => { page.value = 1; load(); });
 
 function onPage(ev: { page: number; rows: number }) {
   page.value = ev.page + 1;
@@ -108,6 +127,12 @@ function onSort(ev: any) {
 
 function add() { router.push('/requests/new'); }
 function edit(r: RequestListItem) { router.push(`/requests/${r.id}`); }
+
+// Печат од редот — легаси МВР образец. Секое зачувано барање има id, па печатењето
+// е достапно секогаш (како во формата: gated само на постоење запис, не на статус).
+function printPaper(r: RequestListItem) {
+  openPrintTab(router.resolve({ name: 'request-print', params: { id: r.id } }).href);
+}
 
 function remove(r: RequestListItem) {
   confirm.require({
@@ -134,12 +159,6 @@ function fmtDate(s: string | null): string {
   return d.toLocaleDateString();
 }
 
-function rowStatus(r: RequestListItem): { label: string; severity: 'success' | 'info' | 'danger' } {
-  if (!r.active) return { label: t('requests.status.inactive'), severity: 'danger' };
-  if (r.endedAt) return { label: t('requests.status.closed'), severity: 'info' };
-  return { label: t('requests.status.open'), severity: 'success' };
-}
-
 const skeletonRows = Array.from({ length: 8 });
 </script>
 
@@ -164,6 +183,14 @@ const skeletonRows = Array.from({ length: 8 });
         <InputText v-model="q" :placeholder="t('common.search')" size="small" style="min-width:300px" />
       </span>
       <Select
+        v-model="requestTypeFilter"
+        :options="requestTypeOptions"
+        optionLabel="name" optionValue="id"
+        :placeholder="t('requests.allTypes')"
+        size="small" class="filter type-filter" showClear filter
+        :filterPlaceholder="t('common.search')"
+      />
+      <Select
         v-if="auth.isAdmin"
         v-model="companyFilter"
         :options="companyOptions"
@@ -185,7 +212,6 @@ const skeletonRows = Array.from({ length: 8 });
     <Column :header="t('requests.col.client')"><template #body><Skeleton /></template></Column>
     <Column :header="t('requests.col.vehicle')"><template #body><Skeleton /></template></Column>
     <Column :header="t('requests.col.created')"><template #body><Skeleton /></template></Column>
-    <Column :header="t('requests.col.status')"><template #body><Skeleton /></template></Column>
   </DataTable>
 
   <DataTable
@@ -242,18 +268,11 @@ const skeletonRows = Array.from({ length: 8 });
     <Column sortField="created" sortable :header="t('requests.col.created')" style="width:110px">
       <template #body="{ data }">{{ fmtDate(data.createdAt) }}</template>
     </Column>
-    <Column sortField="status" sortable :header="t('requests.col.status')" style="width:110px">
+    <Column :header="t('requests.col.actions')" style="width:120px" bodyStyle="text-align:right">
       <template #body="{ data }">
-        <Tag :value="rowStatus(data).label" :severity="rowStatus(data).severity" />
-      </template>
-    </Column>
-    <Column field="createdByUserName" sortField="operator" sortable :header="t('requests.col.operator')" style="width:140px">
-      <template #body="{ data }">{{ data.createdByUserName || '—' }}</template>
-    </Column>
-    <Column :header="t('requests.col.actions')" style="width:90px">
-      <template #body="{ data }">
-        <Button icon="pi pi-pencil" text @click.stop="edit(data)" v-tooltip.left="t('common.edit')" />
-        <Button icon="pi pi-trash"  text severity="danger" @click.stop="remove(data)" v-tooltip.left="t('common.delete')" />
+        <Button icon="pi pi-print"  text rounded size="small" severity="secondary" @click.stop="printPaper(data)" v-tooltip.left="t('requests.print.rowPaper')" />
+        <Button icon="pi pi-pencil" text rounded size="small" severity="secondary" @click.stop="edit(data)" v-tooltip.left="t('common.edit')" />
+        <Button icon="pi pi-trash"  text rounded size="small" severity="danger" @click.stop="remove(data)" v-tooltip.left="t('common.delete')" />
       </template>
     </Column>
   </DataTable>
@@ -269,6 +288,9 @@ const skeletonRows = Array.from({ length: 8 });
 .req-no { font-family: ui-monospace, monospace; font-weight: 600; }
 .filter { min-width: 200px; }
 .filter :deep(.p-select-label) { font-size: 0.8125rem; }
+/* type names are long — cap width + ellipsize the closed-select label */
+.type-filter { min-width: 180px; max-width: 240px; }
+.type-filter :deep(.p-select-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-tabs :deep(.p-togglebutton) { font-size: 0.8125rem; padding: .3rem .7rem }
 .plate { display: inline-block; font-family: monospace; font-weight: 600; padding-right: .5rem }
 .small { font-size: .7rem }

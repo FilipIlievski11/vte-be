@@ -66,6 +66,17 @@ public class Vehicle : ITenantOwned
     // Seats
     public short? Seats { get; set; }
     public short? StandingSeats { get; set; }
+    public short? LyingSeats { get; set; }                   // legacy NumberOfLieingSeats
+
+    // ---- Legacy parity fields (added for the Полномошна full vehicle screen) ----
+    public int? DoorCount { get; set; }                      // legacy NumberOfDoors
+    public int? PropulsionAxleCount { get; set; }            // legacy PropulsionAxis (погонски оски)
+    public bool? HasHook { get; set; }                       // legacy Hook (кука)
+    public bool? HasWinch { get; set; }                      // legacy Vitlo (витло)
+    public bool? ForPublicTransport { get; set; }            // legacy !ForPrivateTransportNotPublic (за јавен превоз)
+    public string? EngineIdMethod { get; set; }              // legacy IdentifikacijaNaMotorMestoMetod — (313)
+    public string? NoiseTechSpec { get; set; }               // legacy NoiseTechnicalSpec — (13)
+    public float? PowerPerCc { get; set; }                   // legacy OdnosKwCcm — (Q) однос kW/cm3
 
     // Emissions / noise
     public float? Co2GKm { get; set; }

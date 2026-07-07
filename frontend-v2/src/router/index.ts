@@ -18,15 +18,6 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    // Alternative styled "readable copy" — renders on blank A4 with chrome,
-    // for cases where pre-printed paper isn't available.
-    path: '/requests/:id/print/styled',
-    name: 'request-print-styled',
-    component: () => import('@/views/RequestPrintView.vue'),
-    props: true,
-    meta: { requiresAuth: true },
-  },
-  {
     // Technical-exam certificate „Потврда за техничка исправност" on blank A4.
     path: '/technical-exams/:id/print',
     name: 'technical-exam-print',
@@ -39,6 +30,38 @@ const routes: RouteRecordRaw[] = [
     path: '/technical-exams/:id/zapisnik',
     name: 'technical-exam-zapisnik',
     component: () => import('@/views/print/TechExamZapisnik.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    // A4 application form (legacy rptInternationalDrivLicenceRequest).
+    path: '/international-driving-licences/:id/print',
+    name: 'idl-print',
+    component: () => import('@/views/print/InternationalDrivingLicenceRequest.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    // Booklet/strip permit insert (legacy rptInternationalDriveingLicence).
+    path: '/international-driving-licences/:id/permit',
+    name: 'idl-permit',
+    component: () => import('@/views/print/InternationalDrivingLicencePermit.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    // Одобрение за туѓо возило — A4 landscape certificate (legacy rptOdobrenieZaTugoV).
+    path: '/vehicle-permissions/:id/print',
+    name: 'vehicle-permission-print',
+    component: () => import('@/views/print/VehiclePermissionCertificate.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    // Барање за одобрение (legacy rptBaranjeZaOdobrenieZaTugoVozilo).
+    path: '/vehicle-permissions/:id/request-print',
+    name: 'vehicle-permission-request-print',
+    component: () => import('@/views/print/VehiclePermissionRequest.vue'),
     props: true,
     meta: { requiresAuth: true },
   },
@@ -62,10 +85,18 @@ const routes: RouteRecordRaw[] = [
       { path: 'payments', name: 'payments', component: () => import('@/views/PaymentsView.vue') },
       { path: 'payments/:id', name: 'payment', component: () => import('@/views/PaymentView.vue'), props: true },
       { path: 'fiscal', name: 'fiscal', component: () => import('@/views/FiscalOptionsView.vue') },
+      { path: 'reports', name: 'reports', component: () => import('@/views/ReportsView.vue') },
+      { path: 'billing-categories', name: 'billing-categories', component: () => import('@/views/BillingCategoriesView.vue') },
       { path: 'technical-exams', name: 'technical-exams', component: () => import('@/views/TechnicalExamsView.vue') },
       { path: 'technical-exams/new', name: 'technical-exam-new', component: () => import('@/views/TechExamFormView.vue') },
       { path: 'technical-exams/:id', name: 'technical-exam', component: () => import('@/views/TechnicalExamReportView.vue'), props: true },
       { path: 'technical-exams/:id/edit', name: 'technical-exam-edit', component: () => import('@/views/TechExamFormView.vue'), props: true },
+      { path: 'international-driving-licences', name: 'idl-list', component: () => import('@/views/InternationalDrivingLicencesView.vue') },
+      { path: 'international-driving-licences/new', name: 'idl-new', component: () => import('@/views/InternationalDrivingLicenceFormView.vue') },
+      { path: 'international-driving-licences/:id', name: 'idl-edit', component: () => import('@/views/InternationalDrivingLicenceFormView.vue'), props: true },
+      { path: 'vehicle-permissions', name: 'vehicle-permissions', component: () => import('@/views/VehiclePermissionsView.vue') },
+      { path: 'vehicle-permissions/new', name: 'vehicle-permission-new', component: () => import('@/views/VehiclePermissionFormView.vue') },
+      { path: 'vehicle-permissions/:id', name: 'vehicle-permission-edit', component: () => import('@/views/VehiclePermissionFormView.vue'), props: true },
       { path: 'stations', name: 'stations', component: () => import('@/views/StationsView.vue') },
       {
         path: 'ref/:kind',

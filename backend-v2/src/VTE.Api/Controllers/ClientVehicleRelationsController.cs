@@ -245,13 +245,54 @@ public class ClientVehicleRelationsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Relation-type lookup for the owner-management dialogs
+    /// (сопственик / овластен / лично …).</summary>
+    public record RelationTypeDto(byte Id, string Name, bool IsOwner, bool IsCustomerOnly, bool Active);
+
+    [HttpGet("types")]
+    public async Task<ActionResult<IReadOnlyList<RelationTypeDto>>> Types()
+        => Ok(await _db.ClientVehicleRelationTypes.AsNoTracking()
+            .Where(t => t.Active)
+            .OrderBy(t => t.Id)
+            .Select(t => new RelationTypeDto(t.Id, t.Name, t.IsOwner, t.IsCustomerOnly, t.Active))
+            .ToListAsync());
+
+    public record EndRelationDto(DateTime? EndDate, string? EndNote);
+
+    /// <summary>„Историска сопственост": close the relation — EndDate stamped
+    /// (default today), Active=false. The row stays as ownership history.</summary>
+    [HttpPost("{id:long}/end")]
+    public async Task<IActionResult> End(long id, [FromBody] EndRelationDto? dto)
+    {
+        var r = await _db.ClientVehicleRelations.FirstOrDefaultAsync(x => x.Id == id);
+        if (r == null) return NotFound();
+        r.EndDate = dto?.EndDate ?? DateTime.UtcNow.Date;
+        r.EndNote = string.IsNullOrWhiteSpace(dto?.EndNote) ? r.EndNote : dto!.EndNote!.Trim();
+        r.Active = false;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>Целосно бришење of the relation from the vehicle. HARD delete —
+    /// refused whenever any document hangs off the relation (requests, bills,
+    /// debts, tech exams, permissions), because those must keep their anchor;
+    /// use /end (историска сопственост) instead in that case.</summary>
     [HttpDelete("{id:long}")]
-    [Authorize(Roles = Roles.Administrator)]
     public async Task<IActionResult> Delete(long id)
     {
         var r = await _db.ClientVehicleRelations.FirstOrDefaultAsync(x => x.Id == id);
         if (r == null) return NotFound();
-        r.Active = false;
+
+        var referenced =
+            await _db.Requests.AsNoTracking().AnyAsync(x => x.ClientVehicleRelationId == id || x.NewClientVehicleRelationId == id) ||
+            await _db.CustomerDebts.AsNoTracking().AnyAsync(x => x.CustomerVehicleRelationId == id) ||
+            await _db.PaymentDocuments.AsNoTracking().AnyAsync(x => x.CustomerVehicleRelationId == id) ||
+            await _db.TechnicalExamReports.AsNoTracking().AnyAsync(x => x.CustomerVehicleRelationId == id) ||
+            await _db.VehiclePermissions.IgnoreQueryFilters().AsNoTracking().AnyAsync(x => x.ClientVehicleRelationId == id);
+        if (referenced)
+            return BadRequest(new { error = "Односот има поврзани документи (барања/сметки/прегледи/полномошна) — може само да се премести во историска сопственост." });
+
+        _db.ClientVehicleRelations.Remove(r);
         await _db.SaveChangesAsync();
         return NoContent();
     }

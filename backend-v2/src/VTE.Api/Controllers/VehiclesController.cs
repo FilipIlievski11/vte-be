@@ -94,14 +94,20 @@ public class VehiclesController : ControllerBase
                           .Where(v => v.ModelId.HasValue && matchingModelIds.Contains(v.ModelId.Value)),
                       r => r.VehicleId!.Value, v => v.Id, (r, v) => r.Id);
 
-            // 3) Relations whose Client name parts or MB match.
-            var clientHitIds = _db.Clients.AsNoTracking()
-                .Where(c =>
-                    (c.FirstName  != null && EF.Functions.Like(c.FirstName,  like)) ||
-                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, like)) ||
-                    (c.LastName   != null && EF.Functions.Like(c.LastName,   like)) ||
-                    (c.MB         != null && EF.Functions.Like(c.MB,         like)))
-                .Select(c => c.Id);
+            // 3) Relations whose Client name parts or MB match. Multi-word aware, same as
+            //    ClientsController: EVERY token must match SOME name field, so "Филип Ил"
+            //    finds ФИЛИП ИЛИЕВСКИ (single-phrase LIKE across one field never could).
+            var clientQuery = _db.Clients.AsNoTracking().AsQueryable();
+            foreach (var token in s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(6))
+            {
+                var tokenLike = $"%{token}%";
+                clientQuery = clientQuery.Where(c =>
+                    (c.FirstName  != null && EF.Functions.Like(c.FirstName,  tokenLike)) ||
+                    (c.MiddleName != null && EF.Functions.Like(c.MiddleName, tokenLike)) ||
+                    (c.LastName   != null && EF.Functions.Like(c.LastName,   tokenLike)) ||
+                    (c.MB         != null && EF.Functions.Like(c.MB,         tokenLike)));
+            }
+            var clientHitIds = clientQuery.Select(c => c.Id);
             var hitByClient = _db.ClientVehicleRelations.AsNoTracking()
                 .Where(r => r.VehicleId != null && clientHitIds.Contains(r.ClientId))
                 .Select(r => r.Id);
@@ -291,6 +297,12 @@ public class VehiclesController : ControllerBase
         v.Co2GKm = d.Co2GKm; v.NoiseStaticDb = d.NoiseStaticDb; v.NoiseMovingDb = d.NoiseMovingDb;
         v.TypeText = d.TypeText; v.ModelVariant = d.ModelVariant; v.ApprovalMark = d.ApprovalMark;
         v.Note = d.Note;
+        // Legacy parity fields (Полномошна full vehicle screen)
+        v.LyingSeats = d.LyingSeats; v.DoorCount = d.DoorCount; v.PropulsionAxleCount = d.PropulsionAxleCount;
+        v.HasHook = d.HasHook; v.HasWinch = d.HasWinch; v.ForPublicTransport = d.ForPublicTransport;
+        v.EngineIdMethod = d.EngineIdMethod; v.NoiseTechSpec = d.NoiseTechSpec; v.PowerPerCc = d.PowerPerCc;
+        v.ManufactureDate = d.ManufactureDate;
+        v.MaxHitchLoadKg = d.MaxHitchLoadKg;
         v.Active = d.Active ?? v.Active;
     }
 
@@ -306,5 +318,9 @@ public class VehiclesController : ControllerBase
         v.Seats, v.StandingSeats,
         v.Co2GKm, v.NoiseStaticDb, v.NoiseMovingDb,
         v.TypeText, v.ModelVariant, v.ApprovalMark,
-        v.Note, v.Active, v.CreatedAt);
+        v.Note, v.Active, v.CreatedAt,
+        v.LyingSeats, v.DoorCount, v.PropulsionAxleCount,
+        v.HasHook, v.HasWinch, v.ForPublicTransport,
+        v.EngineIdMethod, v.NoiseTechSpec, v.PowerPerCc,
+        v.ManufactureDate, v.MaxHitchLoadKg);
 }

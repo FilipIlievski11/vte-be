@@ -6,7 +6,7 @@ public class VehicleRegistration
 {
     public long Id { get; set; }
     public long VehicleId { get; set; }
-    public byte IssuerId { get; set; }                // → DocumentIssuer
+    public byte? IssuerId { get; set; }               // → DocumentIssuer (NULL: legacy rows with no issuer recorded)
     public string PlateNumber { get; set; } = string.Empty;
     public DateTime RegisteredDate { get; set; }
     public DateTime ValidUntil { get; set; }

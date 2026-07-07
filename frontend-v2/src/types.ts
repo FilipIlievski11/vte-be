@@ -149,6 +149,13 @@ export interface Client {
   note: string | null;
   active: boolean | null;
   createdAt: string | null;
+  // Profile fields (legacy Customers parity — Полномошна screen)
+  parentName: string | null;
+  birthCityId: number | null;
+  fax: string | null;
+  profession: string | null;
+  employer: string | null;
+  notificationsAllowed: boolean | null;
 }
 
 export type ClientWrite = Omit<Client, 'id' | 'companyId' | 'createdAt'>;
@@ -160,6 +167,7 @@ export interface ClientPersonalData {
   documentIssuerId: number;
   number: string;
   createdAt: string;
+  expiresAt: string | null;
   active: boolean;
 }
 
@@ -237,12 +245,24 @@ export interface Vehicle {
   co2GKm: number | null; noiseStaticDb: number | null; noiseMovingDb: number | null;
   typeText: string | null; modelVariant: string | null; approvalMark: string | null;
   note: string | null; active: boolean; createdAt: string;
+  // Legacy parity fields (Полномошна full vehicle screen)
+  lyingSeats: number | null;
+  doorCount: number | null;
+  propulsionAxleCount: number | null;
+  hasHook: boolean | null;
+  hasWinch: boolean | null;
+  forPublicTransport: boolean | null;
+  engineIdMethod: string | null;
+  noiseTechSpec: string | null;
+  powerPerCc: number | null;
+  manufactureDate: string | null;
+  maxHitchLoadKg: number | null;
 }
 
 export interface VehicleRegistration {
   id: number;
   vehicleId: number;
-  issuerId: number;
+  issuerId: number | null;
   issuerName: string | null;
   plateNumber: string;
   registeredDate: string;
@@ -712,7 +732,7 @@ export interface TechExamType {
 // ---------- Technical-exam create/edit ----------
 
 /** Lookup for the org/station picker. */
-export interface TechExamOrgLookup { id: number; code: string | null; name: string | null }
+export interface TechExamOrgLookup { id: number; code: string | null; name: string | null; companyId: number | null }
 /** Lookup for the defect status picker. */
 export interface TechExamStatusLookup { id: number; name: string }
 /** Lookup for the defective-part picker. */
@@ -926,6 +946,263 @@ export interface TechExamCertificate {
   controllerName: string | null;
   organization: TechExamCertOrg;
   vehicle: TechExamCertVehicle;
+}
+
+// ---------- International Driving Licences (Меѓународни возачки дозволи) ----------
+
+export interface IdlListItem {
+  id: number;
+  companyId: number;
+  clientId: number;
+  clientName: string | null;
+  clientMb: string | null;
+  numberOfLicence: string;
+  numberOfNationalLicence: string;
+  issuedDate: string;
+  validTillDate: string;
+  categoryCodes: string[];
+  active: boolean;
+}
+
+/** One of the 16 fixed driving-licence categories (A, B, C, ... M). */
+export interface IdlCategoryOption {
+  id: number;
+  code: string;
+  description: string | null;
+}
+
+/** Editable applicant snapshot — auto-filled from the picked client, stored on the
+ * licence (never written back to the client), used verbatim for the prints. */
+export interface IdlApplicant {
+  firstName: string | null;
+  lastName: string | null;
+  parentName: string | null;
+  citizenship: string | null;
+  dateOfBirth: string | null;
+  birthPlace: string | null;
+  address: string | null;
+  passportNumber: string | null;
+  passportIssuer: string | null;
+  passportDate: string | null;
+  passportExpiry: string | null;
+  idCardNumber: string | null;
+  idCardIssuer: string | null;
+  idCardDate: string | null;
+  idCardExpiry: string | null;
+  nationalLicenceIssuer: string | null;
+  nationalLicenceDate: string | null;
+  nationalLicenceExpiry: string | null;
+}
+
+export interface IdlFull {
+  id: number;
+  companyId: number;
+  clientId: number;
+  clientName: string | null;
+  clientMb: string | null;
+  issuerOrganizationId: number;
+  issuerOrganizationName: string | null;
+  numberOfLicence: string;
+  numberOfNationalLicence: string;
+  issuedDate: string;
+  validTillDate: string;
+  note: string | null;
+  active: boolean;
+  createdAt: string;
+  modifiedAt: string | null;
+  categoryIds: number[];
+  applicant: IdlApplicant;
+  rowVersion: string;
+}
+
+/** Create/update payload — mirrors backend IdlWriteDto. */
+export interface IdlWrite {
+  clientId: number;
+  issuerOrganizationId: number;
+  numberOfLicence: string;
+  numberOfNationalLicence: string;
+  issuedDate: string;
+  validTillDate: string;
+  note: string | null;
+  categoryIds: number[];
+  applicant: IdlApplicant;
+  active?: boolean | null;
+  companyId?: number | null;
+}
+
+/** A4 application-form print bundle (legacy rptInternationalDrivLicenceRequest). */
+export interface IdlRequestPrint {
+  id: number;
+  clientFullName: string | null;
+  dateOfBirth: string | null;
+  birthCityName: string | null;
+  citizenshipName: string | null;
+  numberOfNationalLicence: string;
+  numberOfLicence: string;
+  passportNumber: string | null;
+  passportIssuerName: string | null;
+  passportDate: string | null;
+  idCardNumber: string | null;
+  idCardIssuerName: string | null;
+  idCardDate: string | null;
+  nationalLicenceIssuerName: string | null;
+  nationalLicenceDate: string | null;
+  nationalLicenceExpiry: string | null;
+  livingAddress: string | null;
+  livingCityName: string | null;
+  embg: string | null;
+  issuerOrgName: string | null;
+  companyName: string | null;
+  stationCityName: string | null;
+  issuedDate: string;
+}
+
+/** Booklet/strip permit print bundle (legacy rptInternationalDriveingLicence). */
+export interface IdlPermitPrint {
+  id: number;
+  issuedDate: string;
+  validTillDate: string;
+  issuingCityName: string | null;
+  issuingOrgName: string | null;
+  companyName: string | null;
+  numberOfLicence: string;
+  numberOfNationalLicence: string;
+  clientSurname: string | null;
+  clientFirstName: string | null;
+  birthCityName: string | null;
+  dateOfBirth: string | null;
+  livingCityName: string | null;
+  note: string | null;
+}
+
+// ---------- Vehicle Permissions (Полномошна / Одобренија за туѓо возило) ----------
+
+export interface VehiclePermissionListItem {
+  id: number;
+  companyId: number;
+  permissionNumber: string | null;
+  trafficLicenceNumber: string;
+  plateNumber: string | null;
+  vehicleDisplay: string | null;
+  ownerName: string | null;
+  authorizedName: string | null;
+  issuedDate: string;
+  validTillDate: string;
+  active: boolean;
+}
+
+export interface VehiclePermissionFull {
+  id: number;
+  companyId: number;
+  clientVehicleRelationId: number;
+  authorizedClientId: number;
+  issuerId: number;
+  issuingCityId: number;
+  issuerOrganizationId: number;
+  issuerOrganizationName: string | null;
+  permissionNumber: string | null;
+  trafficLicenceNumber: string;
+  triptiqueNumber: string | null;
+  issuedDate: string;
+  startDate: string | null;
+  validTillDate: string;
+  note: string | null;
+  ownerName: string | null;
+  ownerIdNumber: string | null;
+  ownerAddress: string | null;
+  authorizedName: string | null;
+  authorizedEmbg: string | null;
+  authorizedIdCardNumber: string | null;
+  authorizedPassportNumber: string | null;
+  authorizedAddress: string | null;
+  vehicleDisplay: string | null;
+  plateNumber: string | null;
+  vehicleVin: string | null;
+  vehicleEngineNumber: string | null;
+  active: boolean;
+  createdAt: string;
+  modifiedAt: string | null;
+  rowVersion: string;
+}
+
+export interface VehiclePermissionWrite {
+  clientVehicleRelationId: number;
+  authorizedClientId: number;
+  issuerId: number;
+  issuingCityId: number;
+  issuerOrganizationId: number;
+  permissionNumber: string | null;
+  trafficLicenceNumber: string;
+  triptiqueNumber: string | null;
+  issuedDate: string;
+  startDate: string | null;
+  validTillDate: string;
+  note: string | null;
+  ownerName: string | null;
+  ownerIdNumber: string | null;
+  ownerAddress: string | null;
+  authorizedName: string | null;
+  authorizedEmbg: string | null;
+  authorizedIdCardNumber: string | null;
+  authorizedPassportNumber: string | null;
+  authorizedAddress: string | null;
+  vehicleDisplay: string | null;
+  plateNumber: string | null;
+  vehicleVin: string | null;
+  vehicleEngineNumber: string | null;
+  active?: boolean | null;
+  companyId?: number | null;
+}
+
+/** Owner + vehicle defaults resolved from a picked client↔vehicle relation. */
+export interface VehiclePermissionDefaults {
+  relationId: number;
+  ownerClientId: number;
+  ownerName: string | null;
+  ownerIdNumber: string | null;
+  ownerAddress: string | null;
+  vehicleDisplay: string | null;
+  plateNumber: string | null;
+  vehicleVin: string | null;
+  vehicleEngineNumber: string | null;
+}
+
+/** Authorized-person defaults from a picked client. */
+export interface VehiclePermissionAuthorizedDefaults {
+  clientId: number;
+  name: string | null;
+  embg: string | null;
+  address: string | null;
+  idCardNumber: string | null;
+  passportNumber: string | null;
+}
+
+/** Flat bundle both permission print pages consume. */
+export interface VehiclePermissionPrint {
+  id: number;
+  permissionNumber: string | null;
+  trafficLicenceNumber: string;
+  triptiqueNumber: string | null;
+  issuedDate: string;
+  startDate: string | null;
+  validTillDate: string;
+  note: string | null;
+  ownerName: string | null;
+  ownerIdNumber: string | null;
+  ownerAddress: string | null;
+  authorizedName: string | null;
+  authorizedEmbg: string | null;
+  authorizedIdCardNumber: string | null;
+  authorizedPassportNumber: string | null;
+  authorizedAddress: string | null;
+  vehicleDisplay: string | null;
+  plateNumber: string | null;
+  vehicleVin: string | null;
+  vehicleEngineNumber: string | null;
+  issuerName: string | null;
+  issuingCityName: string | null;
+  issuerOrgName: string | null;
+  companyName: string | null;
 }
 
 // ---------- PriceCatalog ----------

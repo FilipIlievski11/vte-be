@@ -4,7 +4,9 @@ using VTE.Domain.Clients;
 using VTE.Domain.Companies;
 using VTE.Domain.Geography;
 using VTE.Domain.Identity;
+using VTE.Domain.InternationalDrivingLicences;
 using VTE.Domain.Payments;
+using VTE.Domain.Permissions;
 using VTE.Domain.References;
 using VTE.Domain.Requests;
 using VTE.Domain.Stations;
@@ -70,6 +72,14 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<TechnicalExamReport> TechnicalExamReports => Set<TechnicalExamReport>();
     public DbSet<TechnicalExamReportDetail> TechnicalExamReportDetails => Set<TechnicalExamReportDetail>();
 
+    // International Driving Licence module — EF-owned (created via AddInternationalDrivingLicences migration).
+    public DbSet<DrivingLicenceCategory> DrivingLicenceCategories => Set<DrivingLicenceCategory>();
+    public DbSet<InternationalDrivingLicence> InternationalDrivingLicences => Set<InternationalDrivingLicence>();
+    public DbSet<InternationalDrivingLicenceCategory> InternationalDrivingLicenceCategories => Set<InternationalDrivingLicenceCategory>();
+
+    // Vehicle Permission (Полномошно / Одобрение за туѓо возило) — EF-owned (AddVehiclePermissions migration).
+    public DbSet<VehiclePermission> VehiclePermissions => Set<VehiclePermission>();
+
     // Payment module — EF-owned (created via AddPayments migration).
     public DbSet<VatRate> VatRates => Set<VatRate>();
     public DbSet<PaymentType> PaymentTypes => Set<PaymentType>();
@@ -79,6 +89,8 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PaymentDocumentLine> PaymentDocumentLines => Set<PaymentDocumentLine>();
     public DbSet<InstallmentSchedule> InstallmentSchedules => Set<InstallmentSchedule>();
     public DbSet<CustomerDebt> CustomerDebts => Set<CustomerDebt>();
+    public DbSet<CalculationItem> CalculationItems => Set<CalculationItem>();
+    public DbSet<PaymentCategoryGroup> PaymentCategoryGroups => Set<PaymentCategoryGroup>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -582,6 +594,120 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         });
 
         // ------------------------------------------------------------------
+        // International Driving Licence module — EF-owned (new).
+        // ------------------------------------------------------------------
+
+        b.Entity<DrivingLicenceCategory>(e =>
+        {
+            e.ToTable("DrivingLicenceCategory");
+            e.HasKey(x => x.Id);
+            // PK is NOT identity — ids 3-18 are preserved 1:1 with legacy
+            // DriveingLicenceCtegories so a future historical migration lines up.
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Code).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(200);
+        });
+
+        b.Entity<InternationalDrivingLicence>(e =>
+        {
+            e.ToTable("InternationalDrivingLicence");
+            e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
+            e.Property(x => x.CompanyId).HasColumnType("tinyint");
+            e.Property(x => x.NumberOfLicence).HasMaxLength(50).IsRequired();
+            e.Property(x => x.NumberOfNationalLicence).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Note).HasMaxLength(250);
+            // Applicant snapshot (print-only; never written back to Client).
+            e.Property(x => x.ApplicantFirstName).HasMaxLength(100);
+            e.Property(x => x.ApplicantLastName).HasMaxLength(100);
+            e.Property(x => x.ApplicantParentName).HasMaxLength(100);
+            e.Property(x => x.ApplicantCitizenship).HasMaxLength(100);
+            e.Property(x => x.ApplicantBirthPlace).HasMaxLength(150);
+            e.Property(x => x.ApplicantAddress).HasMaxLength(200);
+            e.Property(x => x.ApplicantPassportNumber).HasMaxLength(100);
+            e.Property(x => x.ApplicantPassportIssuer).HasMaxLength(200);
+            e.Property(x => x.ApplicantIdCardNumber).HasMaxLength(100);
+            e.Property(x => x.ApplicantIdCardIssuer).HasMaxLength(200);
+            e.Property(x => x.ApplicantNationalLicenceIssuer).HasMaxLength(200);
+            e.Property(x => x.RowVersion).IsRowVersion();
+
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<TechnicalExamOrganization>().WithMany().HasForeignKey(x => x.IssuerOrganizationId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.ClientId);
+            // Legacy hard rule: "Бројот на дозволата мора да биде единствен" — enforced at
+            // the DB level so it's race-safe under concurrent saves, not just app-checked.
+            // Scoped to v2-native rows: the migrated VERTEST registry reuses serials
+            // (14 active duplicate groups), so historical rows are exempt.
+            e.HasIndex(x => x.NumberOfLicence).IsUnique().HasFilter("[LegacyId] IS NULL");
+            // Idempotency key for migrate-idl-from-vertest.sql.
+            e.HasIndex(x => x.LegacyId).IsUnique().HasFilter("[LegacyId] IS NOT NULL");
+
+            e.HasQueryFilter(x => _tenant.IsAdmin || x.CompanyId == _tenant.CompanyId);
+        });
+
+        b.Entity<InternationalDrivingLicenceCategory>(e =>
+        {
+            e.ToTable("InternationalDrivingLicenceCategory");
+            e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
+
+            e.HasOne<InternationalDrivingLicence>().WithMany().HasForeignKey(x => x.InternationalDrivingLicenceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<DrivingLicenceCategory>().WithMany().HasForeignKey(x => x.DrivingLicenceCategoryId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.InternationalDrivingLicenceId, x.DrivingLicenceCategoryId }).IsUnique();
+        });
+
+        // ------------------------------------------------------------------
+        // Vehicle Permission (Полномошно / Одобрение за туѓо возило) — EF-owned
+        // (AddVehiclePermissions migration). Legacy: DocumentsPermisions [sic].
+        // ------------------------------------------------------------------
+
+        b.Entity<VehiclePermission>(e =>
+        {
+            e.ToTable("VehiclePermission");
+            e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
+            e.Property(x => x.CompanyId).HasColumnType("tinyint");
+            e.Property(x => x.PermissionNumber).HasMaxLength(100);
+            e.Property(x => x.TrafficLicenceNumber).HasMaxLength(100).IsRequired();
+            e.Property(x => x.TriptiqueNumber).HasMaxLength(100);
+            e.Property(x => x.Note).HasMaxLength(500);
+            // Print snapshot (stable reprints; never written back to master records).
+            e.Property(x => x.OwnerName).HasMaxLength(300);
+            e.Property(x => x.OwnerIdNumber).HasMaxLength(50);
+            e.Property(x => x.OwnerAddress).HasMaxLength(300);
+            e.Property(x => x.AuthorizedName).HasMaxLength(300);
+            e.Property(x => x.AuthorizedEmbg).HasMaxLength(50);
+            e.Property(x => x.AuthorizedIdCardNumber).HasMaxLength(100);
+            e.Property(x => x.AuthorizedPassportNumber).HasMaxLength(100);
+            e.Property(x => x.AuthorizedAddress).HasMaxLength(300);
+            e.Property(x => x.VehicleDisplay).HasMaxLength(300);
+            e.Property(x => x.PlateNumber).HasMaxLength(50);
+            e.Property(x => x.VehicleVin).HasMaxLength(100);
+            e.Property(x => x.VehicleEngineNumber).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
+
+            e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<ClientVehicleRelation>().WithMany().HasForeignKey(x => x.ClientVehicleRelationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Client>().WithMany().HasForeignKey(x => x.AuthorizedClientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<DocumentIssuer>().WithMany().HasForeignKey(x => x.IssuerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<City>().WithMany().HasForeignKey(x => x.IssuingCityId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<TechnicalExamOrganization>().WithMany().HasForeignKey(x => x.IssuerOrganizationId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.ClientVehicleRelationId);
+            e.HasIndex(x => x.AuthorizedClientId);
+            // Legacy rule (existsPremision): no duplicate ACTIVE permission for the same
+            // (authorized person, owner relation) pair — filtered unique index = race-safe.
+            // Scoped to v2-native rows: the migrated VERTEST registry repeats active pairs.
+            e.HasIndex(x => new { x.AuthorizedClientId, x.ClientVehicleRelationId })
+                .IsUnique()
+                .HasFilter("[Active] = 1 AND [LegacyId] IS NULL");
+            // Idempotency key for migrate-permissions-from-vertest.sql.
+            e.HasIndex(x => x.LegacyId).IsUnique().HasFilter("[LegacyId] IS NOT NULL");
+
+            e.HasQueryFilter(x => _tenant.IsAdmin || x.CompanyId == _tenant.CompanyId);
+        });
+
+        // ------------------------------------------------------------------
         // Payment module — EF-owned (created by the AddPayments migration).
         // Bulk historical data is loaded by migrate-payments.sql (Phase 1).
         // ------------------------------------------------------------------
@@ -719,10 +845,31 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             // Forensic lookups by origin
             e.HasIndex(x => x.OriginRequestId).HasFilter("[OriginRequestId] IS NOT NULL");
             e.HasIndex(x => x.OriginTechnicalExamId).HasFilter("[OriginTechnicalExamId] IS NOT NULL");
+            e.HasIndex(x => x.OriginInternationalDrivingLicenceId).HasFilter("[OriginInternationalDrivingLicenceId] IS NOT NULL");
             // Legacy-sync idempotency: one v2 row per legacy CustomerFinancialState row.
             e.HasIndex(x => x.LegacyId).IsUnique().HasFilter("[LegacyId] IS NOT NULL");
 
             e.HasQueryFilter(x => _tenant.IsAdmin || x.CompanyId == _tenant.CompanyId);
+        });
+
+        // Каде одат парите: уплатни сметки + категории на наплата (global lookups,
+        // ids preserved from legacy CalculationItems / PaymentCategories).
+        b.Entity<CalculationItem>(e =>
+        {
+            e.ToTable("CalculationItem");
+            e.Property(x => x.Name).HasMaxLength(300).IsRequired();
+            e.Property(x => x.BankAccount).HasMaxLength(50);
+            e.Property(x => x.Bank).HasMaxLength(300);
+            e.Property(x => x.Form).HasMaxLength(50);
+            e.HasIndex(x => x.IsOwnAccount).HasFilter("[IsOwnAccount] = 1");
+        });
+        b.Entity<PaymentCategoryGroup>(e =>
+        {
+            e.ToTable("PaymentCategoryGroup");
+            e.Property(x => x.Name).HasMaxLength(300).IsRequired();
+            e.HasOne<CalculationItem>().WithMany().HasForeignKey(x => x.CalculationItemId).OnDelete(DeleteBehavior.Restrict);
+            // PriceCatalog.PaymentCategoryGroupId deliberately stays a LOOSE int:
+            // migrated rules reference group ids deleted upstream in legacy.
         });
     }
 }

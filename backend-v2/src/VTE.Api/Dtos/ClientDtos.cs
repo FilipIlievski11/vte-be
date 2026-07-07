@@ -22,7 +22,14 @@ public record ClientReadDto(
     DateTime? DateOfBirth,
     string? Note,
     bool? Active,
-    DateTime? CreatedAt
+    DateTime? CreatedAt,
+    // Profile fields (legacy Customers parity)
+    string? ParentName = null,
+    int? BirthCityId = null,
+    string? Fax = null,
+    string? Profession = null,
+    string? Employer = null,
+    bool? NotificationsAllowed = null
 );
 
 public record ClientWriteDto(
@@ -42,7 +49,14 @@ public record ClientWriteDto(
     bool? Active,
     /// <summary>Optional admin-only override. Operators always write to their own tenant
     /// regardless of what's sent here.</summary>
-    byte? CompanyId = null
+    byte? CompanyId = null,
+    // Profile fields (legacy Customers parity)
+    [MaxLength(100)] string? ParentName = null,
+    int? BirthCityId = null,
+    [MaxLength(50)] string? Fax = null,
+    [MaxLength(150)] string? Profession = null,
+    [MaxLength(200)] string? Employer = null,
+    bool? NotificationsAllowed = null
 );
 
 public record ClientPersonalDataReadDto(
@@ -52,6 +66,7 @@ public record ClientPersonalDataReadDto(
     byte DocumentIssuerId,
     string Number,
     DateTime CreatedAt,
+    DateTime? ExpiresAt,
     bool Active
 );
 
@@ -60,5 +75,8 @@ public record ClientPersonalDataWriteDto(
     [Required] byte PersonalDataTypeId,
     [Required] byte DocumentIssuerId,
     [Required, MaxLength(100)] string Number,
+    /// <summary>Date issued (CreatedAt doubles as it). Null → server keeps existing / stamps now.</summary>
+    DateTime? CreatedAt = null,
+    DateTime? ExpiresAt = null,
     bool Active = true
 );

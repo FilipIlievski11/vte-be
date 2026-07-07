@@ -59,7 +59,12 @@ public record VehicleReadDto(
     short? Seats, short? StandingSeats,
     float? Co2GKm, float? NoiseStaticDb, float? NoiseMovingDb,
     string? TypeText, string? ModelVariant, string? ApprovalMark,
-    string? Note, bool Active, DateTime CreatedAt
+    string? Note, bool Active, DateTime CreatedAt,
+    // Legacy parity fields (Полномошна full vehicle screen)
+    short? LyingSeats = null, int? DoorCount = null, int? PropulsionAxleCount = null,
+    bool? HasHook = null, bool? HasWinch = null, bool? ForPublicTransport = null,
+    string? EngineIdMethod = null, string? NoiseTechSpec = null, float? PowerPerCc = null,
+    DateTime? ManufactureDate = null, float? MaxHitchLoadKg = null
 );
 
 public record VehicleWriteDto(
@@ -96,5 +101,13 @@ public record VehicleWriteDto(
     [MaxLength(1000)] string? Note,
     bool? Active,
     /// <summary>Admin-only override; operators always write to their own tenant.</summary>
-    byte? CompanyId = null
+    byte? CompanyId = null,
+    // Legacy parity fields (Полномошна full vehicle screen)
+    short? LyingSeats = null, int? DoorCount = null, int? PropulsionAxleCount = null,
+    bool? HasHook = null, bool? HasWinch = null, bool? ForPublicTransport = null,
+    [MaxLength(100)] string? EngineIdMethod = null,
+    [MaxLength(100)] string? NoiseTechSpec = null,
+    float? PowerPerCc = null,
+    DateTime? ManufactureDate = null,
+    float? MaxHitchLoadKg = null
 );

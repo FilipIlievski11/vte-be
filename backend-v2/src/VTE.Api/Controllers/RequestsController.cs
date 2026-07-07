@@ -40,6 +40,7 @@ public class RequestsController : ControllerBase
         [FromQuery] string? q = null,
         [FromQuery] string? status = "open",
         [FromQuery] byte? companyId = null,
+        [FromQuery] byte? requestTypeId = null,
         [FromQuery] long? clientVehicleRelationId = null,
         [FromQuery] bool includeInactive = false,
         [FromQuery] string? sort = null,
@@ -54,6 +55,7 @@ public class RequestsController : ControllerBase
 
         if (!includeInactive) query = query.Where(r => r.Active);
         if (companyId.HasValue) query = query.Where(r => r.CompanyId == companyId.Value);
+        if (requestTypeId.HasValue) query = query.Where(r => r.RequestTypeId == requestTypeId.Value);
         if (clientVehicleRelationId.HasValue)
             query = query.Where(r => r.ClientVehicleRelationId == clientVehicleRelationId.Value);
 

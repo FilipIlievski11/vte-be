@@ -40,6 +40,16 @@ public class CustomerDebt : ITenantOwned
     /// <summary>If Origin = TechnicalExam(Irregular), the tech-exam id. Legacy: IdDocumentTehnicalExam.</summary>
     public long? OriginTechnicalExamId { get; set; }
 
+    /// <summary>If Origin = InternationalDrivingLicence, the IDL id. Person-level debt — anchored
+    /// to a vehicle-less ("Лично") ClientVehicleRelation since CustomerVehicleRelationId is
+    /// required but this workflow has no vehicle.</summary>
+    public long? OriginInternationalDrivingLicenceId { get; set; }
+
+    /// <summary>If Origin = Permission, the VehiclePermission id (одобрение за туѓо возило).
+    /// Anchored to the OWNER's vehicle relation, mirroring legacy
+    /// insertFinancialStatePriceCatalogForPermisions.</summary>
+    public long? OriginPermissionId { get; set; }
+
     /// <summary>Station/organization that owns this debt. Legacy: IdOrganization.</summary>
     public int OrganizationId { get; set; }
 

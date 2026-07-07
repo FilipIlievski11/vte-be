@@ -35,6 +35,7 @@ const groups: MenuGroup[] = [
       { to: '/ref/request-payment-proof-types',     labelKey: 'admin.requestPaymentProofTypes' },
       { to: '/ref/request-attachment-types',        labelKey: 'admin.requestAttachmentTypes' },
       { to: '/prices',                              labelKey: 'admin.prices' },
+      { to: '/billing-categories',                  labelKey: 'admin.billingCategories' },
       { to: '/legacy-sync',                         labelKey: 'admin.legacySync' },
     ],
   },
@@ -97,8 +98,12 @@ const pageTitle = computed(() => {
   if (path.startsWith('/vehicles')) return t('nav.vehicles');
   if (path.startsWith('/requests')) return t('nav.requests');
   if (path.startsWith('/technical-exams')) return t('nav.technicalExams');
+  if (path.startsWith('/international-driving-licences')) return t('nav.internationalDrivingLicences');
+  if (path.startsWith('/vehicle-permissions')) return t('nav.vehiclePermissions');
   if (path.startsWith('/payments')) return t('nav.payments');
   if (path.startsWith('/fiscal')) return t('nav.fiscal');
+  if (path.startsWith('/reports')) return t('nav.reports');
+  if (path.startsWith('/billing-categories')) return `${t('nav.administration')} · ${t('admin.billingCategories')}`;
   if (path.startsWith('/companies')) return `${t('nav.administration')} · ${t('admin.companies')}`;
   if (path.startsWith('/stations')) return `${t('nav.administration')} · ${t('admin.stations')}`;
   if (path.startsWith('/operators')) return `${t('nav.administration')} · ${t('admin.operators')}`;
@@ -159,6 +164,16 @@ async function logout() {
               </RouterLink>
             </li>
             <li>
+              <RouterLink to="/international-driving-licences" class="topnav">
+                <i class="pi pi-id-card" /><span>{{ t('nav.internationalDrivingLicences') }}</span>
+              </RouterLink>
+            </li>
+            <li>
+              <RouterLink to="/vehicle-permissions" class="topnav">
+                <i class="pi pi-file-check" /><span>{{ t('nav.vehiclePermissions') }}</span>
+              </RouterLink>
+            </li>
+            <li>
               <RouterLink to="/payments" class="topnav">
                 <i class="pi pi-wallet" /><span>{{ t('nav.payments') }}</span>
               </RouterLink>
@@ -166,6 +181,11 @@ async function logout() {
             <li>
               <RouterLink to="/fiscal" class="topnav">
                 <i class="pi pi-print" /><span>{{ t('nav.fiscal') }}</span>
+              </RouterLink>
+            </li>
+            <li>
+              <RouterLink to="/reports" class="topnav">
+                <i class="pi pi-chart-bar" /><span>{{ t('nav.reports') }}</span>
               </RouterLink>
             </li>
           </ul>

@@ -31,12 +31,16 @@ public class DebtService : IDebtService
     {
         // Idempotency: if any debt already exists for this source, skip.
         // (We don't try to reconcile changes — that's a Phase 4+ concern.)
-        var isRequest  = origin == DebtOrigin.Request;
-        var isTechExam = origin == DebtOrigin.TechnicalExam || origin == DebtOrigin.TechnicalExamIrregular;
+        var isRequest    = origin == DebtOrigin.Request;
+        var isTechExam   = origin == DebtOrigin.TechnicalExam || origin == DebtOrigin.TechnicalExamIrregular;
+        var isIdl        = origin == DebtOrigin.InternationalDrivingLicence;
+        var isPermission = origin == DebtOrigin.Permission;
         var existing = await _db.CustomerDebts.AsNoTracking().AnyAsync(d =>
             d.Origin == origin
-            && ((isRequest  && d.OriginRequestId       == originId)
-             || (isTechExam && d.OriginTechnicalExamId == originId)),
+            && ((isRequest    && d.OriginRequestId                       == originId)
+             || (isTechExam   && d.OriginTechnicalExamId                 == originId)
+             || (isIdl        && d.OriginInternationalDrivingLicenceId   == originId)
+             || (isPermission && d.OriginPermissionId                    == originId)),
             ct);
         if (existing) return 0;
 
@@ -66,8 +70,10 @@ public class DebtService : IDebtService
                 VatPercent = m.VatPercent,
                 Note = note,
                 Origin = origin,
-                OriginRequestId          = origin == DebtOrigin.Request ? originId : null,
-                OriginTechnicalExamId    = origin is DebtOrigin.TechnicalExam or DebtOrigin.TechnicalExamIrregular ? originId : null,
+                OriginRequestId                     = origin == DebtOrigin.Request ? originId : null,
+                OriginTechnicalExamId               = origin is DebtOrigin.TechnicalExam or DebtOrigin.TechnicalExamIrregular ? originId : null,
+                OriginInternationalDrivingLicenceId = origin == DebtOrigin.InternationalDrivingLicence ? originId : null,
+                OriginPermissionId                  = origin == DebtOrigin.Permission ? originId : null,
                 OrganizationId = organizationId,
                 Paid = false,
                 CreatedAt = now,

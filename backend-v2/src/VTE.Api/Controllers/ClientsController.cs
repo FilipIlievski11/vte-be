@@ -95,7 +95,8 @@ public class ClientsController : ControllerBase
                 c.Id, c.CompanyId, c.CityId, c.CitizenshipId, c.Business,
                 c.FirstName, c.MiddleName, c.LastName, c.MB, c.Address,
                 c.TaxNumber, c.PhoneNumber, c.Email, c.DateOfBirth, c.Note,
-                c.Active, c.CreatedAt))
+                c.Active, c.CreatedAt,
+                c.ParentName, c.BirthCityId, c.Fax, c.Profession, c.Employer, c.NotificationsAllowed))
             .ToListAsync();
 
         return Ok(new PagedDto<ClientReadDto>(page, pageSize, total, items));
@@ -110,7 +111,8 @@ public class ClientsController : ControllerBase
             c.Id, c.CompanyId, c.CityId, c.CitizenshipId, c.Business,
             c.FirstName, c.MiddleName, c.LastName, c.MB, c.Address,
             c.TaxNumber, c.PhoneNumber, c.Email, c.DateOfBirth, c.Note,
-            c.Active, c.CreatedAt));
+            c.Active, c.CreatedAt,
+            c.ParentName, c.BirthCityId, c.Fax, c.Profession, c.Employer, c.NotificationsAllowed));
     }
 
     [HttpPost]
@@ -154,6 +156,12 @@ public class ClientsController : ControllerBase
             Email = dto.Email,
             DateOfBirth = dto.DateOfBirth,
             Note = dto.Note,
+            ParentName = dto.ParentName,
+            BirthCityId = dto.BirthCityId,
+            Fax = dto.Fax,
+            Profession = dto.Profession,
+            Employer = dto.Employer,
+            NotificationsAllowed = dto.NotificationsAllowed,
             Active = dto.Active ?? true,
             CreatedAt = DateTime.UtcNow,
         };
@@ -164,7 +172,8 @@ public class ClientsController : ControllerBase
             entity.Id, entity.CompanyId, entity.CityId, entity.CitizenshipId, entity.Business,
             entity.FirstName, entity.MiddleName, entity.LastName, entity.MB, entity.Address,
             entity.TaxNumber, entity.PhoneNumber, entity.Email, entity.DateOfBirth, entity.Note,
-            entity.Active, entity.CreatedAt));
+            entity.Active, entity.CreatedAt,
+            entity.ParentName, entity.BirthCityId, entity.Fax, entity.Profession, entity.Employer, entity.NotificationsAllowed));
     }
 
     [HttpPut("{id:long}")]
@@ -193,6 +202,12 @@ public class ClientsController : ControllerBase
         c.Email = dto.Email;
         c.DateOfBirth = dto.DateOfBirth;
         c.Note = dto.Note;
+        c.ParentName = dto.ParentName;
+        c.BirthCityId = dto.BirthCityId;
+        c.Fax = dto.Fax;
+        c.Profession = dto.Profession;
+        c.Employer = dto.Employer;
+        c.NotificationsAllowed = dto.NotificationsAllowed;
         c.Active = dto.Active ?? c.Active;
 
         await _db.SaveChangesAsync();
@@ -209,5 +224,62 @@ public class ClientsController : ControllerBase
         c.Active = false;
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // ------------------------------------------------------------------------
+    // Документи на клиентот — меѓународни возачки дозволи + полномошна, за
+    // прегледот на дното од формата (валидна/истечена по ValidTillDate).
+    // ------------------------------------------------------------------------
+    public record ClientIdlRow(
+        long Id, string NumberOfLicence, DateTime IssuedDate, DateTime ValidTillDate);
+    public record ClientPermissionRow(
+        long Id, string? PermissionNumber, string TrafficLicenceNumber,
+        string? PlateNumber, string? VehicleDisplay,
+        string Role,                       // "owner" | "authorized"
+        string? OtherPartyName,            // owner → authorized person; authorized → owner
+        DateTime IssuedDate, DateTime ValidTillDate);
+    public record ClientDocumentsDto(
+        IReadOnlyList<ClientIdlRow> InternationalDrivingLicences,
+        IReadOnlyList<ClientPermissionRow> Permissions);
+
+    /// <summary>The client's МВД + полномошна (both roles: vehicle owner via the
+    /// relation, and authorized person). Active rows only, newest-valid first.
+    /// Validity itself is derived client-side from ValidTillDate.</summary>
+    [HttpGet("{id:long}/documents")]
+    public async Task<ActionResult<ClientDocumentsDto>> Documents(long id)
+    {
+        var idls = await _db.InternationalDrivingLicences.AsNoTracking()
+            .Where(x => x.ClientId == id && x.Active)
+            .OrderByDescending(x => x.ValidTillDate)
+            .Select(x => new ClientIdlRow(x.Id, x.NumberOfLicence, x.IssuedDate, x.ValidTillDate))
+            .ToListAsync();
+
+        var clientRelationIds = _db.ClientVehicleRelations.AsNoTracking()
+            .Where(r => r.ClientId == id)
+            .Select(r => r.Id);
+
+        var asOwner = await _db.VehiclePermissions.AsNoTracking()
+            .Where(p => p.Active && clientRelationIds.Contains(p.ClientVehicleRelationId))
+            .Select(p => new ClientPermissionRow(
+                p.Id, p.PermissionNumber, p.TrafficLicenceNumber,
+                p.PlateNumber, p.VehicleDisplay,
+                "owner", p.AuthorizedName,
+                p.IssuedDate, p.ValidTillDate))
+            .ToListAsync();
+
+        var asAuthorized = await _db.VehiclePermissions.AsNoTracking()
+            .Where(p => p.Active && p.AuthorizedClientId == id)
+            .Select(p => new ClientPermissionRow(
+                p.Id, p.PermissionNumber, p.TrafficLicenceNumber,
+                p.PlateNumber, p.VehicleDisplay,
+                "authorized", p.OwnerName,
+                p.IssuedDate, p.ValidTillDate))
+            .ToListAsync();
+
+        var permissions = asOwner.Concat(asAuthorized)
+            .OrderByDescending(p => p.ValidTillDate)
+            .ToList();
+
+        return Ok(new ClientDocumentsDto(idls, permissions));
     }
 }

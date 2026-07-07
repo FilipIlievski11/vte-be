@@ -143,6 +143,9 @@ namespace VTE.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int?>("BirthCityId")
+                        .HasColumnType("int");
+
                     b.Property<bool?>("Business")
                         .HasColumnType("bit");
 
@@ -165,6 +168,12 @@ namespace VTE.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("Employer")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Fax")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("FirstName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -185,9 +194,18 @@ namespace VTE.Infrastructure.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<bool?>("NotificationsAllowed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ParentName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Profession")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TaxNumber")
                         .HasMaxLength(50)
@@ -223,6 +241,9 @@ namespace VTE.Infrastructure.Migrations
 
                     b.Property<byte>("DocumentIssuerId")
                         .HasColumnType("tinyint");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Number")
                         .IsRequired()
@@ -461,6 +482,208 @@ namespace VTE.Infrastructure.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("VTE.Domain.InternationalDrivingLicences.InternationalDrivingLicence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ApplicantAddress")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ApplicantBirthPlace")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ApplicantCitizenship")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ApplicantDateOfBirth")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApplicantFirstName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ApplicantIdCardDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ApplicantIdCardExpiry")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApplicantIdCardIssuer")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ApplicantIdCardNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ApplicantLastName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ApplicantNationalLicenceDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ApplicantNationalLicenceExpiry")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApplicantNationalLicenceIssuer")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ApplicantParentName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ApplicantPassportDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ApplicantPassportExpiry")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApplicantPassportIssuer")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ApplicantPassportNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte>("CompanyId")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("IssuedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IssuerOrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("LegacyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("NumberOfLicence")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("NumberOfNationalLicence")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("ValidTillDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("IssuerOrganizationId");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasFilter("[LegacyId] IS NOT NULL");
+
+                    b.HasIndex("NumberOfLicence")
+                        .IsUnique()
+                        .HasFilter("[LegacyId] IS NULL");
+
+                    b.ToTable("InternationalDrivingLicence", (string)null);
+                });
+
+            modelBuilder.Entity("VTE.Domain.InternationalDrivingLicences.InternationalDrivingLicenceCategory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("DrivingLicenceCategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("InternationalDrivingLicenceId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DrivingLicenceCategoryId");
+
+                    b.HasIndex("InternationalDrivingLicenceId", "DrivingLicenceCategoryId")
+                        .IsUnique();
+
+                    b.ToTable("InternationalDrivingLicenceCategory", (string)null);
+                });
+
+            modelBuilder.Entity("VTE.Domain.Payments.CalculationItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Bank")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("BankAccount")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Form")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("IsOwnAccount")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsOwnAccount")
+                        .HasFilter("[IsOwnAccount] = 1");
+
+                    b.ToTable("CalculationItem", (string)null);
+                });
+
             modelBuilder.Entity("VTE.Domain.Payments.CustomerDebt", b =>
                 {
                     b.Property<long>("Id")
@@ -498,6 +721,12 @@ namespace VTE.Infrastructure.Migrations
                     b.Property<byte>("Origin")
                         .HasColumnType("tinyint");
 
+                    b.Property<long?>("OriginInternationalDrivingLicenceId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("OriginPermissionId")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("OriginRequestId")
                         .HasColumnType("bigint");
 
@@ -528,6 +757,9 @@ namespace VTE.Infrastructure.Migrations
                     b.HasIndex("LegacyId")
                         .IsUnique()
                         .HasFilter("[LegacyId] IS NOT NULL");
+
+                    b.HasIndex("OriginInternationalDrivingLicenceId")
+                        .HasFilter("[OriginInternationalDrivingLicenceId] IS NOT NULL");
 
                     b.HasIndex("OriginRequestId")
                         .HasFilter("[OriginRequestId] IS NOT NULL");
@@ -651,6 +883,38 @@ namespace VTE.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("InstallmentSchedule", (string)null);
+                });
+
+            modelBuilder.Entity("VTE.Domain.Payments.PaymentCategoryGroup", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("CalculationItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CompanyScope")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int?>("VisibleOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationItemId");
+
+                    b.ToTable("PaymentCategoryGroup", (string)null);
                 });
 
             modelBuilder.Entity("VTE.Domain.Payments.PaymentDocument", b =>
@@ -962,6 +1226,149 @@ namespace VTE.Infrastructure.Migrations
                     b.ToTable("VatRate", (string)null);
                 });
 
+            modelBuilder.Entity("VTE.Domain.Permissions.VehiclePermission", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("AuthorizedAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<long>("AuthorizedClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AuthorizedEmbg")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("AuthorizedIdCardNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AuthorizedName")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("AuthorizedPassportNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("ClientVehicleRelationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte>("CompanyId")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("IssuedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte>("IssuerId")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("IssuerOrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IssuingCityId")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("LegacyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OwnerAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("OwnerIdNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("OwnerName")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("PermissionNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PlateNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TrafficLicenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("TriptiqueNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ValidTillDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("VehicleDisplay")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("VehicleEngineNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("VehicleVin")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorizedClientId");
+
+                    b.HasIndex("ClientVehicleRelationId");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("IssuerId");
+
+                    b.HasIndex("IssuerOrganizationId");
+
+                    b.HasIndex("IssuingCityId");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasFilter("[LegacyId] IS NOT NULL");
+
+                    b.HasIndex("AuthorizedClientId", "ClientVehicleRelationId")
+                        .IsUnique()
+                        .HasFilter("[Active] = 1 AND [LegacyId] IS NULL");
+
+                    b.ToTable("VehiclePermission", (string)null);
+                });
+
             modelBuilder.Entity("VTE.Domain.References.Citizenship", b =>
                 {
                     b.Property<byte>("Id")
@@ -1009,6 +1416,28 @@ namespace VTE.Infrastructure.Migrations
                     b.HasIndex("CommunityId");
 
                     b.ToTable("DocumentIssuer", (string)null);
+                });
+
+            modelBuilder.Entity("VTE.Domain.References.DrivingLicenceCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DrivingLicenceCategory", (string)null);
                 });
 
             modelBuilder.Entity("VTE.Domain.References.PersonalDataType", b =>
@@ -1928,11 +2357,17 @@ namespace VTE.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("DoorCount")
+                        .HasColumnType("int");
+
                     b.Property<byte?>("EcoProgramId")
                         .HasColumnType("tinyint");
 
                     b.Property<float?>("EmptyWeightKg")
                         .HasColumnType("real");
+
+                    b.Property<string>("EngineIdMethod")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("EngineNumber")
                         .HasMaxLength(40)
@@ -1947,10 +2382,19 @@ namespace VTE.Infrastructure.Migrations
                     b.Property<float?>("EngineWorkingCapacityCc")
                         .HasColumnType("real");
 
+                    b.Property<bool?>("ForPublicTransport")
+                        .HasColumnType("bit");
+
                     b.Property<byte?>("FuelId")
                         .HasColumnType("tinyint");
 
+                    b.Property<bool?>("HasHook")
+                        .HasColumnType("bit");
+
                     b.Property<bool?>("HasLpg")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("HasWinch")
                         .HasColumnType("bit");
 
                     b.Property<float?>("HeightMm")
@@ -1961,6 +2405,9 @@ namespace VTE.Infrastructure.Migrations
 
                     b.Property<float?>("LengthMm")
                         .HasColumnType("real");
+
+                    b.Property<short?>("LyingSeats")
+                        .HasColumnType("smallint");
 
                     b.Property<short?>("MadeCountryId")
                         .HasColumnType("smallint");
@@ -2008,6 +2455,9 @@ namespace VTE.Infrastructure.Migrations
                     b.Property<float?>("NoiseStaticDb")
                         .HasColumnType("real");
 
+                    b.Property<string>("NoiseTechSpec")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Note")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -2019,8 +2469,14 @@ namespace VTE.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<float?>("PowerPerCc")
+                        .HasColumnType("real");
+
                     b.Property<short?>("PrimaryColorId")
                         .HasColumnType("smallint");
+
+                    b.Property<int?>("PropulsionAxleCount")
+                        .HasColumnType("int");
 
                     b.Property<short?>("Seats")
                         .HasColumnType("smallint");
@@ -2327,7 +2783,7 @@ namespace VTE.Infrastructure.Migrations
                     b.Property<bool>("IsFirstRegistration")
                         .HasColumnType("bit");
 
-                    b.Property<byte>("IssuerId")
+                    b.Property<byte?>("IssuerId")
                         .HasColumnType("tinyint");
 
                     b.Property<string>("PlateNumber")
@@ -2464,6 +2920,42 @@ namespace VTE.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("VTE.Domain.InternationalDrivingLicences.InternationalDrivingLicence", b =>
+                {
+                    b.HasOne("VTE.Domain.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.TechnicalExams.TechnicalExamOrganization", null)
+                        .WithMany()
+                        .HasForeignKey("IssuerOrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("VTE.Domain.InternationalDrivingLicences.InternationalDrivingLicenceCategory", b =>
+                {
+                    b.HasOne("VTE.Domain.References.DrivingLicenceCategory", null)
+                        .WithMany()
+                        .HasForeignKey("DrivingLicenceCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.InternationalDrivingLicences.InternationalDrivingLicence", null)
+                        .WithMany()
+                        .HasForeignKey("InternationalDrivingLicenceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("VTE.Domain.Payments.CustomerDebt", b =>
                 {
                     b.HasOne("VTE.Domain.Companies.Company", null)
@@ -2506,6 +2998,14 @@ namespace VTE.Infrastructure.Migrations
                         .HasForeignKey("PaymentDocumentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("VTE.Domain.Payments.PaymentCategoryGroup", b =>
+                {
+                    b.HasOne("VTE.Domain.Payments.CalculationItem", null)
+                        .WithMany()
+                        .HasForeignKey("CalculationItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("VTE.Domain.Payments.PaymentDocument", b =>
@@ -2554,6 +3054,45 @@ namespace VTE.Infrastructure.Migrations
                     b.HasOne("VTE.Domain.Payments.VatRate", null)
                         .WithMany()
                         .HasForeignKey("VatRateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("VTE.Domain.Permissions.VehiclePermission", b =>
+                {
+                    b.HasOne("VTE.Domain.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorizedClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.Vehicles.ClientVehicleRelation", null)
+                        .WithMany()
+                        .HasForeignKey("ClientVehicleRelationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.References.DocumentIssuer", null)
+                        .WithMany()
+                        .HasForeignKey("IssuerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.TechnicalExams.TechnicalExamOrganization", null)
+                        .WithMany()
+                        .HasForeignKey("IssuerOrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VTE.Domain.Geography.City", null)
+                        .WithMany()
+                        .HasForeignKey("IssuingCityId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2806,8 +3345,7 @@ namespace VTE.Infrastructure.Migrations
                     b.HasOne("VTE.Domain.References.DocumentIssuer", null)
                         .WithMany()
                         .HasForeignKey("IssuerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("VTE.Domain.Vehicles.Vehicle", null)
                         .WithMany()

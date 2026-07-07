@@ -26,7 +26,7 @@ public class ClientPersonalDataController : ControllerBase
             .Where(x => x.ClientId == clientId)
             .OrderByDescending(x => x.Id)
             .Select(x => new ClientPersonalDataReadDto(
-                x.Id, x.ClientId, x.PersonalDataTypeId, x.DocumentIssuerId, x.Number, x.CreatedAt, x.Active))
+                x.Id, x.ClientId, x.PersonalDataTypeId, x.DocumentIssuerId, x.Number, x.CreatedAt, x.ExpiresAt, x.Active))
             .ToListAsync();
         return Ok(rows);
     }
@@ -40,7 +40,7 @@ public class ClientPersonalDataController : ControllerBase
         var visible = await _db.Clients.AnyAsync(c => c.Id == x.ClientId);
         if (!visible) return NotFound();
         return Ok(new ClientPersonalDataReadDto(
-            x.Id, x.ClientId, x.PersonalDataTypeId, x.DocumentIssuerId, x.Number, x.CreatedAt, x.Active));
+            x.Id, x.ClientId, x.PersonalDataTypeId, x.DocumentIssuerId, x.Number, x.CreatedAt, x.ExpiresAt, x.Active));
     }
 
     [HttpPost]
@@ -55,14 +55,16 @@ public class ClientPersonalDataController : ControllerBase
             PersonalDataTypeId = dto.PersonalDataTypeId,
             DocumentIssuerId = dto.DocumentIssuerId,
             Number = dto.Number,
-            CreatedAt = DateTime.UtcNow,
+            // CreatedAt doubles as "date issued" — honour the operator-entered date when given.
+            CreatedAt = dto.CreatedAt ?? DateTime.UtcNow,
+            ExpiresAt = dto.ExpiresAt,
             Active = dto.Active,
         };
         _db.ClientPersonalData.Add(e);
         await _db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(Get), new { id = e.Id }, new ClientPersonalDataReadDto(
-            e.Id, e.ClientId, e.PersonalDataTypeId, e.DocumentIssuerId, e.Number, e.CreatedAt, e.Active));
+            e.Id, e.ClientId, e.PersonalDataTypeId, e.DocumentIssuerId, e.Number, e.CreatedAt, e.ExpiresAt, e.Active));
     }
 
     [HttpPut("{id:long}")]
@@ -76,6 +78,8 @@ public class ClientPersonalDataController : ControllerBase
         e.PersonalDataTypeId = dto.PersonalDataTypeId;
         e.DocumentIssuerId = dto.DocumentIssuerId;
         e.Number = dto.Number;
+        if (dto.CreatedAt.HasValue) e.CreatedAt = dto.CreatedAt.Value;  // date issued, when edited
+        e.ExpiresAt = dto.ExpiresAt;
         e.Active = dto.Active;
         await _db.SaveChangesAsync();
         return NoContent();

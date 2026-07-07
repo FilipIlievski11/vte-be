@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 import type {
-  Company, Country, Vehicle, VehicleBodyType, VehicleCategory, VehicleColor,
+  Company, Country, Paged, TechExamListItem, Vehicle, VehicleBodyType, VehicleCategory, VehicleColor,
   VehicleEcoProgram, VehicleEngineType, VehicleFuel, VehicleMaker, VehicleModel,
   VehiclePaymentCategory, VehicleRegistration, VehicleRelationDto,
 } from '@/types';
@@ -18,6 +18,9 @@ import Select from 'primevue/select';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Tag from 'primevue/tag';
+import Dialog from 'primevue/dialog';
+import AutoComplete from 'primevue/autocomplete';
+import DatePicker from 'primevue/datepicker';
 import { useToast } from 'primevue/usetoast';
 
 const props = defineProps<{ id?: string }>();
@@ -72,6 +75,7 @@ const countries     = ref<Country[]>([]);
 // Sub-grids
 const owners        = ref<VehicleRelationDto[]>([]);
 const registrations = ref<VehicleRegistration[]>([]);
+const techExams     = ref<TechExamListItem[]>([]);
 
 const filteredModels = computed(() =>
   selectedMakerId.value
@@ -123,12 +127,129 @@ async function loadVehicle() {
     if (m) selectedMakerId.value = m.makerId;
   }
   // Load sub-grids
-  const [own, reg] = await Promise.all([
+  const [own, reg, exams] = await Promise.all([
     api.get<VehicleRelationDto[]>(`/client-vehicle-relations?vehicleId=${data.id}`),
     api.get<VehicleRegistration[]>(`/vehicle-registrations?vehicleId=${data.id}`),
+    api.get<Paged<TechExamListItem>>('/technical-exams', {
+      params: { vehicleId: data.id, dir: 'desc', pageSize: 200 },
+    }).catch(() => null),
   ]);
   owners.value = own.data;
   registrations.value = reg.data;
+  techExams.value = exams?.data.items ?? [];
+}
+
+async function reloadOwners() {
+  if (!isEdit.value) return;
+  try {
+    const { data } = await api.get<VehicleRelationDto[]>(`/client-vehicle-relations?vehicleId=${props.id}`);
+    owners.value = data;
+  } catch { /* non-fatal */ }
+}
+
+// =====================================================================
+// Owner management: add a new owner; remove one — either into historical
+// ownership (EndDate + inactive, row preserved) or fully deleted (backend
+// refuses when documents reference the relation).
+// =====================================================================
+interface RelationTypeOpt { id: number; name: string; isOwner: boolean; isCustomerOnly: boolean }
+const relationTypes = ref<RelationTypeOpt[]>([]);
+// Add dialog
+const addOwnerVisible = ref(false);
+const addOwnerSaving = ref(false);
+type ClientOpt = { id: number; label: string };
+const ownerSel = ref<ClientOpt | string | null>(null);
+const ownerSuggestions = ref<ClientOpt[]>([]);
+const addRelationTypeId = ref<number | null>(null);
+const addStartDate = ref<Date>(new Date());
+
+async function openAddOwner() {
+  if (!relationTypes.value.length) {
+    try {
+      const { data } = await api.get<RelationTypeOpt[]>('/client-vehicle-relations/types');
+      relationTypes.value = data.filter(x => !x.isCustomerOnly);
+    } catch { /* dialog still opens */ }
+  }
+  ownerSel.value = null;
+  ownerSuggestions.value = [];
+  addRelationTypeId.value = relationTypes.value.find(x => x.isOwner)?.id ?? relationTypes.value[0]?.id ?? null;
+  addStartDate.value = new Date();
+  addOwnerVisible.value = true;
+}
+
+async function onOwnerComplete(e: { query: string }) {
+  const term = (e.query || '').trim();
+  if (term.length < 2) { ownerSuggestions.value = []; return; }
+  try {
+    const { data } = await api.get<{ items: { id: number; firstName: string | null; middleName: string | null; lastName: string | null; mb: string | null }[] }>(
+      '/clients', { params: { q: term, pageSize: 20 } });
+    ownerSuggestions.value = data.items.map(c => ({
+      id: c.id,
+      label: [[c.firstName, c.middleName, c.lastName].filter(Boolean).join(' '), c.mb].filter(Boolean).join(' · '),
+    }));
+  } catch { ownerSuggestions.value = []; }
+}
+
+function toIsoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function saveNewOwner() {
+  const sel = ownerSel.value;
+  if (!sel || typeof sel === 'string' || !addRelationTypeId.value) return;
+  addOwnerSaving.value = true;
+  try {
+    await api.post('/client-vehicle-relations', {
+      clientId: sel.id,
+      vehicleId: Number(props.id),
+      relationTypeId: addRelationTypeId.value,
+      startDate: toIsoDay(addStartDate.value ?? new Date()),
+      endDate: null, startNote: null, endNote: null, active: true,
+    });
+    addOwnerVisible.value = false;
+    toast.add({ severity: 'success', summary: t('vehicles.owners.added'), life: 2200 });
+    await reloadOwners();
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('common.saveFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { addOwnerSaving.value = false; }
+}
+
+// Remove dialog (историска / целосно / откажи)
+const removeVisible = ref(false);
+const removeBusy = ref(false);
+const removeTarget = ref<VehicleRelationDto | null>(null);
+function openRemoveOwner(r: VehicleRelationDto) {
+  removeTarget.value = r;
+  removeVisible.value = true;
+}
+async function removeToHistory() {
+  const r = removeTarget.value;
+  if (!r) return;
+  removeBusy.value = true;
+  try {
+    // send the operator's LOCAL today — the server's UTC date lags by a day at night
+    await api.post(`/client-vehicle-relations/${r.id}/end`, { endDate: toIsoDay(new Date()) });
+    removeVisible.value = false;
+    toast.add({ severity: 'success', summary: t('vehicles.owners.movedToHistory'), life: 2500 });
+    await reloadOwners();
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('common.saveFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { removeBusy.value = false; }
+}
+async function removeCompletely() {
+  const r = removeTarget.value;
+  if (!r) return;
+  removeBusy.value = true;
+  try {
+    await api.delete(`/client-vehicle-relations/${r.id}`);
+    removeVisible.value = false;
+    toast.add({ severity: 'success', summary: t('vehicles.owners.removed'), life: 2500 });
+    await reloadOwners();
+  } catch (e: any) {
+    // typical: relation has documents → backend suggests историска
+    toast.add({ severity: 'warn', summary: t('vehicles.owners.removeRefused'),
+      detail: e?.response?.data?.error ?? e?.message, life: 6000 });
+  } finally { removeBusy.value = false; }
 }
 
 onMounted(async () => {
@@ -410,9 +531,12 @@ function fmtDate(s: string | null | undefined) {
         </div>
       </div>
 
-      <!-- ===== Owners (read-only) ===== -->
+      <!-- ===== Owners ===== -->
       <div v-if="isEdit" class="card">
-        <div class="card-header">{{ t('vehicles.sections.owners') }}</div>
+        <div class="card-header owners-header">
+          {{ t('vehicles.sections.owners') }}
+          <Button :label="t('vehicles.owners.add')" icon="pi pi-plus" size="small" outlined @click="openAddOwner" />
+        </div>
         <div class="card-body">
           <DataTable :value="owners" size="small" stripedRows v-if="owners.length">
             <Column field="clientDisplayName" :header="t('vehicles.owners.colClient')">
@@ -428,6 +552,12 @@ function fmtDate(s: string | null | undefined) {
             <Column :header="t('vehicles.owners.colActive')" style="width: 90px" bodyStyle="text-align:center">
               <template #body="{ data }">
                 <Tag :value="data.active ? t('common.yes') : t('common.no')" :severity="data.active ? 'success' : 'danger'" />
+              </template>
+            </Column>
+            <Column style="width: 56px" bodyStyle="text-align:right">
+              <template #body="{ data }">
+                <Button v-if="data.active" icon="pi pi-trash" text rounded size="small" severity="danger"
+                        v-tooltip.left="t('vehicles.owners.remove')" @click="openRemoveOwner(data)" />
               </template>
             </Column>
           </DataTable>
@@ -467,6 +597,52 @@ function fmtDate(s: string | null | undefined) {
         </div>
       </div>
 
+      <!-- ===== Историја на технички прегледи ===== -->
+      <div v-if="isEdit" class="card">
+        <div class="card-header">
+          {{ t('vehicles.sections.techExams') }}
+          <span v-if="techExams.length" class="count-chip">{{ techExams.length }}</span>
+        </div>
+        <div class="card-body">
+          <DataTable :value="techExams" size="small" stripedRows v-if="techExams.length"
+            rowHover scrollable scrollHeight="320px"
+            @row-click="(e: any) => router.push(`/technical-exams/${e.data.id}`)"
+            :pt="{ row: { style: 'cursor: pointer' } }" dataKey="id">
+            <Column :header="t('vehicles.techExams.colDate')" style="width: 110px">
+              <template #body="{ data }">{{ fmtDate(data.madeDate) }}</template>
+            </Column>
+            <Column field="typeName" :header="t('vehicles.techExams.colType')">
+              <template #body="{ data }">{{ data.typeCode || data.typeName || '—' }}</template>
+            </Column>
+            <Column field="regNumber" :header="t('vehicles.techExams.colRegNumber')">
+              <template #body="{ data }">{{ data.regNumber || '—' }}</template>
+            </Column>
+            <Column field="clientName" :header="t('vehicles.techExams.colClient')">
+              <template #body="{ data }">{{ data.clientName || '—' }}</template>
+            </Column>
+            <Column :header="t('vehicles.techExams.colValidTill')" style="width: 110px">
+              <template #body="{ data }">{{ fmtDate(data.validTillDate) }}</template>
+            </Column>
+            <Column :header="t('vehicles.techExams.colResult')" style="width: 110px" bodyStyle="text-align:center">
+              <template #body="{ data }">
+                <Tag :value="data.vehicleIsRight ? t('vehicles.techExams.pass') : t('vehicles.techExams.fail')"
+                     :severity="data.vehicleIsRight ? 'success' : 'danger'" />
+              </template>
+            </Column>
+            <Column style="width: 46px" bodyStyle="text-align:right">
+              <template #body="{ data }">
+                <Button icon="pi pi-external-link" text rounded size="small" severity="secondary"
+                        v-tooltip.left="t('vehicles.techExams.open')"
+                        @click.stop="router.push(`/technical-exams/${data.id}`)" />
+              </template>
+            </Column>
+          </DataTable>
+          <div v-else class="empty" style="padding: 1.5rem">
+            <i class="pi pi-clipboard" /> {{ t('vehicles.techExams.noRows') }}
+          </div>
+        </div>
+      </div>
+
       <div v-if="errorBanner" class="error">{{ errorBanner }}</div>
 
       <div class="footer-actions">
@@ -475,10 +651,88 @@ function fmtDate(s: string | null | undefined) {
       </div>
     </template>
   </div>
+
+  <!-- Додади сопственик -->
+  <Dialog v-model:visible="addOwnerVisible" :header="t('vehicles.owners.add')" modal :style="{ width: '30rem' }">
+    <div class="owner-dlg">
+      <div class="field">
+        <label>{{ t('vehicles.owners.client') }} *</label>
+        <AutoComplete
+          v-model="ownerSel" :suggestions="ownerSuggestions" optionLabel="label"
+          :placeholder="t('vehicles.owners.clientPlaceholder')"
+          @complete="onOwnerComplete" fluid />
+      </div>
+      <div class="field">
+        <label>{{ t('vehicles.owners.relationType') }} *</label>
+        <Select v-model="addRelationTypeId" :options="relationTypes" optionLabel="name" optionValue="id" fluid />
+      </div>
+      <div class="field">
+        <label>{{ t('vehicles.owners.startDate') }}</label>
+        <DatePicker v-model="addStartDate" dateFormat="dd.mm.yy" showIcon iconDisplay="input" fluid />
+      </div>
+    </div>
+    <template #footer>
+      <Button :label="t('common.cancel')" severity="secondary" outlined size="small" @click="addOwnerVisible = false" />
+      <Button :label="t('common.save')" icon="pi pi-check" size="small" :loading="addOwnerSaving"
+              :disabled="!ownerSel || typeof ownerSel === 'string' || !addRelationTypeId" @click="saveNewOwner" />
+    </template>
+  </Dialog>
+
+  <!-- Избриши сопственик: историска сопственост или целосно -->
+  <Dialog v-model:visible="removeVisible" :header="t('vehicles.owners.removeTitle')" modal :style="{ width: '32rem' }">
+    <div v-if="removeTarget" class="remove-dlg">
+      <p class="remove-q">
+        {{ t('vehicles.owners.removeQuestion', { name: removeTarget.clientDisplayName || `#${removeTarget.clientId}` }) }}
+      </p>
+      <div class="remove-options">
+        <button class="remove-opt" :disabled="removeBusy" @click="removeToHistory">
+          <i class="pi pi-history" />
+          <span class="ro-title">{{ t('vehicles.owners.optHistory') }}</span>
+          <span class="ro-sub">{{ t('vehicles.owners.optHistoryHint') }}</span>
+        </button>
+        <button class="remove-opt danger" :disabled="removeBusy" @click="removeCompletely">
+          <i class="pi pi-trash" />
+          <span class="ro-title">{{ t('vehicles.owners.optDelete') }}</span>
+          <span class="ro-sub">{{ t('vehicles.owners.optDeleteHint') }}</span>
+        </button>
+      </div>
+    </div>
+    <template #footer>
+      <Button :label="t('common.cancel')" severity="secondary" outlined size="small" :disabled="removeBusy" @click="removeVisible = false" />
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
 /* Same v1-style cards as ClientFormView. */
+
+/* Owner management */
+.owners-header { display: flex; align-items: center; justify-content: space-between; }
+.count-chip {
+  margin-left: 0.45rem; font-size: 0.7rem; font-weight: 600;
+  background: var(--p-primary-color); color: #fff;
+  border-radius: 10px; padding: 0.05rem 0.45rem; vertical-align: middle;
+}
+.owner-dlg { display: flex; flex-direction: column; gap: 0.8rem; }
+.owner-dlg .field { display: flex; flex-direction: column; gap: 0.25rem; }
+.owner-dlg label { font-size: 0.8rem; color: var(--p-text-muted-color); }
+
+.remove-q { margin: 0 0 0.9rem; font-size: 0.875rem; }
+.remove-options { display: flex; flex-direction: column; gap: 0.5rem; }
+.remove-opt {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+  column-gap: 0.6rem; align-items: center; text-align: left;
+  padding: 0.6rem 0.8rem; border-radius: 10px; cursor: pointer;
+  background: var(--p-content-background);
+  border: 1px solid var(--p-content-border-color);
+}
+.remove-opt:hover:not(:disabled) { border-color: var(--p-primary-color); background: color-mix(in srgb, var(--p-primary-color) 5%, transparent); }
+.remove-opt:disabled { opacity: 0.6; cursor: default; }
+.remove-opt i { grid-row: span 2; font-size: 1rem; color: var(--p-primary-color); }
+.remove-opt .ro-title { font-weight: 600; font-size: 0.85rem; }
+.remove-opt .ro-sub { font-size: 0.72rem; color: var(--p-text-muted-color); }
+.remove-opt.danger i { color: var(--p-red-500, #ef4444); }
+.remove-opt.danger:hover:not(:disabled) { border-color: var(--p-red-500, #ef4444); background: color-mix(in srgb, #ef4444 5%, transparent); }
 .vehicle-form { max-width: 1200px; margin: 0 auto; padding-bottom: 3.5rem; }
 .vehicle-form :deep(.page-header) { margin-bottom: 0.75rem; }
 .vehicle-form :deep(.page-header h1) { font-size: 1.125rem; letter-spacing: -0.01em; }

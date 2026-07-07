@@ -42,6 +42,7 @@ interface DocCard {
   id: number;
   number: string;
   dateIssued: Date | null;
+  expiresAt: Date | null;
   issuerId: number | null;
 }
 
@@ -73,7 +74,7 @@ const passport        = ref<DocCard>(blankDoc());
 const drivingLicence  = ref<DocCard>(blankDoc());
 
 function blankDoc(): DocCard {
-  return { id: 0, number: '', dateIssued: null, issuerId: null };
+  return { id: 0, number: '', dateIssued: null, expiresAt: null, issuerId: null };
 }
 
 // Reference dropdowns
@@ -94,7 +95,12 @@ function toDate(s: string | null | undefined): Date | null {
 }
 function fromDate(d: Date | null): string | null {
   if (!d) return null;
-  return d.toISOString();
+  // Local date-only (yyyy-MM-dd) — toISOString() would shift local midnight to the
+  // previous day in UTC+ zones (dates here are calendar dates, not instants).
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 async function loadRefs() {
@@ -154,6 +160,7 @@ async function loadClient() {
     target.id         = row.id;
     target.number     = row.number;
     target.dateIssued = toDate(row.createdAt);
+    target.expiresAt  = toDate(row.expiresAt);
     target.issuerId   = row.documentIssuerId;
   };
   fillCard(idCard.value,         pickFirst(3));
@@ -167,13 +174,54 @@ async function loadClient() {
     );
     relatedVehicles.value = rels;
   } catch { /* non-fatal — the rest of the form still works */ }
+
+  // Документи: меѓународни дозволи + полномошна (валидна/истечена по датум).
+  try {
+    const { data: docs } = await api.get<ClientDocuments>(`/clients/${props.id}/documents`);
+    clientDocs.value = docs;
+  } catch { /* non-fatal */ }
 }
+
+// ---- Документи (МВД + полномошна) на дното од формата ----
+interface ClientIdlRow {
+  id: number; numberOfLicence: string; issuedDate: string; validTillDate: string;
+}
+interface ClientPermissionRow {
+  id: number; permissionNumber: string | null; trafficLicenceNumber: string;
+  plateNumber: string | null; vehicleDisplay: string | null;
+  role: 'owner' | 'authorized'; otherPartyName: string | null;
+  issuedDate: string; validTillDate: string;
+}
+interface ClientDocuments {
+  internationalDrivingLicences: ClientIdlRow[];
+  permissions: ClientPermissionRow[];
+}
+const clientDocs = ref<ClientDocuments | null>(null);
+
+function isDocValid(validTill: string): boolean {
+  const d = new Date(validTill);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d >= today;
+}
+function docStatus(validTill: string): { label: string; severity: 'success' | 'danger' } {
+  return isDocValid(validTill)
+    ? { label: t('clients.form.docs.valid'), severity: 'success' }
+    : { label: t('clients.form.docs.expired'), severity: 'danger' };
+}
+function fmtDocDate(s: string): string { return new Date(s).toLocaleDateString(); }
 
 onMounted(async () => {
   loading.value = true;
   try {
     await loadRefs();
     await loadClient();
+    // Нов клиент: Државјанство default Македонско (станицата е македонска; странците
+    // се реткост и се менуваат рачно). Resolve by name — the lookup has duplicate rows.
+    if (!isEdit.value && form.value.citizenshipId == null) {
+      const mk = citizenships.value.find(z => z.name?.trim() === 'Македонско');
+      if (mk) form.value.citizenshipId = mk.id;
+    }
   } catch (e: any) {
     errorBanner.value = e?.response?.data?.error ?? e?.message ?? 'Failed to load.';
   } finally {
@@ -258,6 +306,8 @@ async function persistDoc(clientId: number, typeId: number, card: DocCard) {
       personalDataTypeId: typeId,
       documentIssuerId: issuerId,
       number: trimmed,
+      createdAt: fromDate(card.dateIssued),   // date issued (CreatedAt doubles as it)
+      expiresAt: fromDate(card.expiresAt),
       active: true,
     });
   } else if (trimmed) {
@@ -266,6 +316,8 @@ async function persistDoc(clientId: number, typeId: number, card: DocCard) {
       personalDataTypeId: typeId,
       documentIssuerId: issuerId,
       number: trimmed,
+      createdAt: fromDate(card.dateIssued),
+      expiresAt: fromDate(card.expiresAt),
       active: true,
     });
     card.id = data.id;
@@ -293,6 +345,7 @@ async function deleteDoc(card: DocCard, label: string) {
   card.id = 0;
   card.number = '';
   card.dateIssued = null;
+  card.expiresAt = null;
   card.issuerId = null;
 }
 </script>
@@ -417,6 +470,10 @@ async function deleteDoc(card: DocCard, label: string) {
                 <DatePicker v-model="idCard.dateIssued" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
               </div>
               <div class="field">
+                <label>{{ t('clients.form.dateExpires') }}</label>
+                <DatePicker v-model="idCard.expiresAt" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
+              </div>
+              <div class="field">
                 <label>{{ t('clients.form.docIssuer') }}</label>
                 <Select
                   v-model="idCard.issuerId"
@@ -446,6 +503,10 @@ async function deleteDoc(card: DocCard, label: string) {
                 <DatePicker v-model="passport.dateIssued" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
               </div>
               <div class="field">
+                <label>{{ t('clients.form.dateExpires') }}</label>
+                <DatePicker v-model="passport.expiresAt" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
+              </div>
+              <div class="field">
                 <label>{{ t('clients.form.docIssuer') }}</label>
                 <Select
                   v-model="passport.issuerId"
@@ -473,6 +534,10 @@ async function deleteDoc(card: DocCard, label: string) {
               <div class="field">
                 <label>{{ t('clients.form.dateIssued') }}</label>
                 <DatePicker v-model="drivingLicence.dateIssued" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
+              </div>
+              <div class="field">
+                <label>{{ t('clients.form.dateExpires') }}</label>
+                <DatePicker v-model="drivingLicence.expiresAt" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
               </div>
               <div class="field">
                 <label>{{ t('clients.form.docIssuer') }}</label>
@@ -609,6 +674,49 @@ async function deleteDoc(card: DocCard, label: string) {
         </div>
       </div>
 
+      <!-- Документи: меѓународни возачки дозволи + полномошна -->
+      <div v-if="isEdit" class="card">
+        <div class="card-header">{{ t('clients.form.docs.section') }}</div>
+        <div class="card-body docs-body">
+          <template v-if="clientDocs && (clientDocs.internationalDrivingLicences.length || clientDocs.permissions.length)">
+            <div v-if="clientDocs.internationalDrivingLicences.length" class="doc-group">
+              <div class="doc-group-title"><i class="pi pi-id-card" /> {{ t('clients.form.docs.idls') }}</div>
+              <div v-for="d in clientDocs.internationalDrivingLicences" :key="'idl' + d.id"
+                   class="doc-row" @click="router.push(`/international-driving-licences/${d.id}`)">
+                <span class="doc-no mono">{{ d.numberOfLicence }}</span>
+                <span class="doc-dates muted">{{ fmtDocDate(d.issuedDate) }} — {{ fmtDocDate(d.validTillDate) }}</span>
+                <Tag :value="docStatus(d.validTillDate).label" :severity="docStatus(d.validTillDate).severity" class="doc-tag" />
+                <i class="pi pi-external-link doc-open muted" />
+              </div>
+            </div>
+
+            <div v-if="clientDocs.permissions.length" class="doc-group">
+              <div class="doc-group-title"><i class="pi pi-file-check" /> {{ t('clients.form.docs.permissions') }}</div>
+              <div v-for="p in clientDocs.permissions" :key="'perm' + p.id + p.role"
+                   class="doc-row" @click="router.push(`/vehicle-permissions/${p.id}`)">
+                <span class="doc-no mono">{{ p.permissionNumber || p.trafficLicenceNumber }}</span>
+                <span class="doc-veh">
+                  <span v-if="p.plateNumber" class="plate">{{ p.plateNumber }}</span>
+                  <span v-if="p.vehicleDisplay" class="muted small"> {{ p.vehicleDisplay }}</span>
+                </span>
+                <Tag :value="p.role === 'owner' ? t('clients.form.docs.roleOwner') : t('clients.form.docs.roleAuthorized')"
+                     severity="secondary" class="doc-tag" />
+                <span v-if="p.otherPartyName" class="doc-other muted" :title="p.otherPartyName">
+                  {{ p.role === 'owner' ? t('clients.form.docs.forPerson') : t('clients.form.docs.fromPerson') }} {{ p.otherPartyName }}
+                </span>
+                <span class="doc-dates muted">{{ fmtDocDate(p.issuedDate) }} — {{ fmtDocDate(p.validTillDate) }}</span>
+                <Tag :value="docStatus(p.validTillDate).label" :severity="docStatus(p.validTillDate).severity" class="doc-tag" />
+                <i class="pi pi-external-link doc-open muted" />
+              </div>
+            </div>
+          </template>
+          <div v-else class="empty" style="padding: 1.5rem; display:flex; align-items:center; gap:0.6rem">
+            <i class="pi pi-id-card" />
+            {{ t('clients.form.docs.noRows') }}
+          </div>
+        </div>
+      </div>
+
       <div v-if="errorBanner" class="error">{{ errorBanner }}</div>
 
       <div class="footer-actions">
@@ -694,6 +802,32 @@ async function deleteDoc(card: DocCard, label: string) {
   border-color: var(--color-brand-500);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-500) 25%, transparent);
 }
+
+/* Документи (МВД + полномошна) */
+.docs-body { display: flex; flex-direction: column; gap: 0.7rem; }
+.doc-group-title {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--color-text-secondary); margin-bottom: 0.25rem;
+}
+.doc-group-title i { font-size: 0.72rem; }
+.doc-row {
+  display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+  padding: 0.28rem 0.45rem; border-radius: 6px; cursor: pointer;
+  font-size: 0.8125rem; line-height: 1.25;
+}
+.doc-row:hover { background: color-mix(in srgb, var(--color-brand-500) 6%, transparent); }
+.doc-row .doc-no { font-weight: 600; min-width: 6.5rem; }
+.doc-row .doc-veh { min-width: 0; }
+.doc-row .doc-other { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
+.doc-row .doc-dates { font-size: 0.75rem; white-space: nowrap; margin-left: auto; }
+.doc-row .doc-tag :deep(.p-tag-label), .doc-row .doc-tag { font-size: 0.68rem; }
+.doc-row .doc-open { font-size: 0.72rem; }
+.doc-row .plate { font-family: monospace; font-weight: 600; }
+.doc-row .doc-veh .small { margin-left: 0.4rem; }
+.doc-row .mono { font-family: ui-monospace, monospace; }
+.doc-row .small { font-size: 0.72rem; }
+.doc-row .muted { color: var(--color-text-secondary); }
 
 /* Sticky footer save bar, anchored to viewport bottom across the content area */
 .footer-actions {

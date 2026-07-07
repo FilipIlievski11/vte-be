@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { openPrintTab } from '@/utils/print';
 import type { Paged, TechExamListItem, TechExamType } from '@/types';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -106,6 +107,15 @@ function fmtDate(s: string | null): string {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 }
 
+// Печат од редот — записник секогаш; потврда само за исправно возило (како во деталите).
+function printZapisnik(r: TechExamListItem) {
+  openPrintTab(router.resolve({ name: 'technical-exam-zapisnik', params: { id: r.id } }).href);
+}
+function printCertificate(r: TechExamListItem) {
+  if (!r.vehicleIsRight) return;
+  openPrintTab(router.resolve({ name: 'technical-exam-print', params: { id: r.id } }).href);
+}
+
 const skeletonRows = Array.from({ length: 8 });
 </script>
 
@@ -147,6 +157,7 @@ const skeletonRows = Array.from({ length: 8 });
     <Column :header="t('techExam.col.type')"><template #body><Skeleton /></template></Column>
     <Column :header="t('techExam.col.made')"><template #body><Skeleton /></template></Column>
     <Column :header="t('techExam.col.result')"><template #body><Skeleton /></template></Column>
+    <Column :header="t('techExam.col.actions')"><template #body><Skeleton /></template></Column>
   </DataTable>
 
   <DataTable
@@ -213,6 +224,17 @@ const skeletonRows = Array.from({ length: 8 });
           :value="data.vehicleIsRight ? t('techExam.pass') : t('techExam.fail')"
           :severity="data.vehicleIsRight ? 'success' : 'danger'"
         />
+      </template>
+    </Column>
+    <Column :header="t('techExam.col.actions')" style="width:76px" bodyStyle="text-align:right">
+      <template #body="{ data }">
+        <Button icon="pi pi-file" text rounded size="small" severity="secondary"
+                v-tooltip.left="t('techExam.printZapisnik')"
+                @click.stop="printZapisnik(data)" />
+        <Button icon="pi pi-print" text rounded size="small" severity="secondary"
+                :disabled="!data.vehicleIsRight"
+                v-tooltip.left="data.vehicleIsRight ? t('techExam.printCertificate') : t('techExam.printDisabledHint')"
+                @click.stop="printCertificate(data)" />
       </template>
     </Column>
   </DataTable>

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.14" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
@@ -22,10 +23,17 @@
   </ItemGroup>
 
   <!-- Embed the incremental migration SQL so the admin "Sync from legacy" button
-       runs the same script as the manual sqlcmd workflow (single source of truth). -->
+       runs the same script as the manual sqlcmd workflow (single source of truth).
+       The two VERTEST scripts (IDL + Полномошна live registries) run right after it. -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\migrate\migrate-incremental.sql">
       <LogicalName>migrate-incremental.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\migrate\migrate-idl-from-vertest.sql">
+      <LogicalName>migrate-idl-from-vertest.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\migrate\migrate-permissions-from-vertest.sql">
+      <LogicalName>migrate-permissions-from-vertest.sql</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

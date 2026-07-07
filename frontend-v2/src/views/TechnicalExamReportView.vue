@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { openPrintTab } from '@/utils/print';
 import type { TechExamReportFull } from '@/types';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
@@ -31,10 +32,10 @@ async function load() {
 onMounted(load);
 
 function printCertificate() {
-  window.open(`/technical-exams/${props.id}/print`, '_blank');
+  openPrintTab(`/technical-exams/${props.id}/print`);
 }
 function printZapisnik() {
-  window.open(`/technical-exams/${props.id}/zapisnik`, '_blank');
+  openPrintTab(`/technical-exams/${props.id}/zapisnik`);
 }
 
 function fmtDate(s: string | null): string {

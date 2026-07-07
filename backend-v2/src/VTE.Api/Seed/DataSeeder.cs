@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VTE.Domain.Companies;
 using VTE.Domain.Identity;
+using VTE.Domain.Payments;
+using VTE.Domain.References;
 using VTE.Domain.Requests;
 using VTE.Domain.Stations;
 using VTE.Infrastructure.Persistence;
@@ -84,6 +86,9 @@ public static class DataSeeder
 
         // 5. Request module catalogs
         await SeedRequestCatalogsAsync(db, log);
+
+        // 6. International Driving Licence catalogs
+        await SeedInternationalDrivingLicenceCatalogsAsync(db, log);
     }
 
     private static async Task SeedRequestCatalogsAsync(VteDbContext db, ILogger log)
@@ -212,5 +217,96 @@ public static class DataSeeder
         }
 
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 16 driving-licence categories (ids 3-18 preserved 1:1 with legacy
+    /// DriveingLicenceCtegories) + one PriceCatalog row for the IDL flat fee.
+    ///
+    /// Note: the bulk historical pricing migration already carried over 3 legacy
+    /// PaymentItemParametars rows with Trigger=InternationalDrivingLicence (ids 155/931/1632,
+    /// one per legacy company) — but all 3 have VehiclePaymentCategoryId=11 set, which can
+    /// never match this workflow's vehicle-less PricingEvaluator call (no vehicle ⇒
+    /// VehiclePaymentCategoryId is always null on the evaluator side). Rather than mutate
+    /// already-migrated historical-parity data, this seeds a NEW row scoped for the
+    /// vehicle-less case (VehiclePaymentCategoryId=NULL) so the debt hook actually fires.
+    /// </summary>
+    private static async Task SeedInternationalDrivingLicenceCatalogsAsync(VteDbContext db, ILogger log)
+    {
+        var categories = new[]
+        {
+            (Id: 3,  Code: "A",   Description: "моторцикли"),
+            (Id: 4,  Code: "B",   Description: "возила, освен возилата од категоријата А чија најголема дозволена тежина не преминува 3500кг (770 ливри) и кои освен седиштето за возачот имаат најмногу 8 седишта"),
+            (Id: 5,  Code: "C",   Description: "возила, наменети за превоз на товар чија најголема дозволена тежина преминува 3500кг (7700 ливри)"),
+            (Id: 6,  Code: "D",   Description: "АВТОБУСИ"),
+            (Id: 7,  Code: "E",   Description: "ПРИКОЛИЦИ"),
+            (Id: 8,  Code: "A1",  Description: (string?)null),
+            (Id: 9,  Code: "C1",  Description: (string?)null),
+            (Id: 10, Code: "D1",  Description: (string?)null),
+            (Id: 11, Code: "BE",  Description: (string?)null),
+            (Id: 12, Code: "C1E", Description: (string?)null),
+            (Id: 13, Code: "CE",  Description: (string?)null),
+            (Id: 14, Code: "D1E", Description: (string?)null),
+            (Id: 15, Code: "DE",  Description: (string?)null),
+            (Id: 16, Code: "G",   Description: (string?)null),
+            (Id: 17, Code: "F",   Description: (string?)null),
+            (Id: 18, Code: "M",   Description: (string?)null),
+        };
+        foreach (var c in categories)
+        {
+            if (!await db.DrivingLicenceCategories.AnyAsync(x => x.Id == c.Id))
+            {
+                db.DrivingLicenceCategories.Add(new DrivingLicenceCategory
+                {
+                    Id = c.Id, Code = c.Code, Description = c.Description, Active = true,
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+
+        const string idlCode = "IDL-ISSUE";
+        if (!await db.PriceCatalogs.AnyAsync(x => x.Code == idlCode))
+        {
+            // VatRateId=3 (18%, standard rate) matches the legacy-migrated rows above.
+            db.PriceCatalogs.Add(new PriceCatalog
+            {
+                Code = idlCode,
+                Name = "Издавање на меѓународна возачка дозвола",
+                BasePrice = 842.52m,
+                VatRateId = 3,
+                Trigger = PriceTrigger.InternationalDrivingLicence,
+                VehicleField = null,
+                VehiclePaymentCategoryId = null,
+                CommunityId = null,
+                PriceCompanyId = null,
+                Active = true,
+            });
+            await db.SaveChangesAsync();
+            log.LogInformation("Seeded PriceCatalog: {Code}", idlCode);
+        }
+
+        const string permCode = "PERM-ISSUE";
+        if (!await db.PriceCatalogs.AnyAsync(x => x.Code == permCode))
+        {
+            // Legacy "Одобрение за туѓо возило" / "за Сите возила" — PaymentItemParametars
+            // rows 271 (company 3) and 1690 (company 4), both 506.22 ден flat,
+            // VehicleField=Null (matches unconditionally). Confirm against current
+            // real-world pricing before go-live.
+            db.PriceCatalogs.Add(new PriceCatalog
+            {
+                Code = permCode,
+                Name = "Одобрение за туѓо возило",
+                BasePrice = 506.22m,
+                VatRateId = 3,
+                Trigger = PriceTrigger.Permission,
+                VehicleField = null,
+                VehiclePaymentCategoryId = null,
+                CommunityId = null,
+                PriceCompanyId = null,
+                Active = true,
+            });
+            await db.SaveChangesAsync();
+            log.LogInformation("Seeded PriceCatalog: {Code}", permCode);
+        }
     }
 }

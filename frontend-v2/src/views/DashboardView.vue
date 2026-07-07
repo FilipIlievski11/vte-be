@@ -15,6 +15,7 @@ import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
+import AutoComplete from 'primevue/autocomplete';
 import { printFiscalForDocument } from '@/fiscal/fiscal';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
@@ -247,6 +248,110 @@ async function deleteSelectedDebts() {
   });
 }
 
+// --- Детали на сметка (per-client account detail: view / add / delete ставки) ---
+const detailVisible = ref(false);
+const detailGroup = ref<DebtClientGroup | null>(null);
+const detailRows = ref<CustomerDebtRow[]>([]);
+const detailLoading = ref(false);
+
+interface PriceCatalogOpt {
+  id: number; name: string; code: string | null; basePrice: number;
+  parametarFrom: number | null; parametarTo: number | null;
+}
+const pcOptions = ref<PriceCatalogOpt[]>([]);
+const pcSelected = ref<PriceCatalogOpt | null>(null);
+const addPrice = ref<number | null>(null);
+const addNote = ref('');
+const addSaving = ref(false);
+
+/** Same {0}/{1} parametar-range substitution the backend does for debt rows. */
+function pcLabel(p: PriceCatalogOpt): string {
+  let n = p.name ?? '';
+  n = n.replace('{0}', p.parametarFrom != null ? String(Math.trunc(p.parametarFrom)) : '');
+  n = n.replace('{1}', p.parametarTo != null ? String(Math.trunc(p.parametarTo)) : '');
+  return n;
+}
+
+async function searchPriceCatalog(e: { query: string }) {
+  try {
+    const { data } = await api.get<Paged<PriceCatalogOpt>>('/price-catalogs', {
+      params: { search: e.query, activeOnly: true, pageSize: 20 },
+    });
+    pcOptions.value = data.items ?? [];
+  } catch { pcOptions.value = []; }
+}
+function onPcSelect(e: { value: PriceCatalogOpt }) {
+  addPrice.value = e.value.basePrice;
+}
+
+async function openDetail(g: DebtClientGroup) {
+  detailGroup.value = g;
+  detailVisible.value = true;
+  pcSelected.value = null; addPrice.value = null; addNote.value = '';
+  await refreshDetail();
+}
+
+async function refreshDetail() {
+  if (!detailGroup.value) return;
+  detailLoading.value = true;
+  try {
+    const { data } = await api.get<Paged<CustomerDebtRow>>('/customer-debts', {
+      params: { customerVehicleRelationId: detailGroup.value.relationId, unpaidOnly: false, pageSize: 200 },
+    });
+    detailRows.value = data.items ?? [];
+  } finally { detailLoading.value = false; }
+}
+
+const detailUnpaidRows = computed(() => detailRows.value.filter(r => !r.paid));
+const detailUnpaidTotal = computed(() => detailUnpaidRows.value.reduce((s, r) => s + r.price, 0));
+
+async function addDetailItem() {
+  if (!detailGroup.value || !pcSelected.value || typeof pcSelected.value === 'string') return;
+  addSaving.value = true;
+  try {
+    await api.post('/customer-debts', {
+      customerVehicleRelationId: detailGroup.value.relationId,
+      priceCatalogId: pcSelected.value.id,
+      price: addPrice.value,
+      note: addNote.value.trim() || null,
+    });
+    pcSelected.value = null; addPrice.value = null; addNote.value = '';
+    await Promise.all([refreshDetail(), refreshDebts()]);
+    toast.add({ severity: 'success', summary: t('dashboard.naplata.itemAdded'), life: 2000 });
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('dashboard.naplata.addFailed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { addSaving.value = false; }
+}
+
+function deleteDetailRow(r: CustomerDebtRow) {
+  confirm.require({
+    message: t('dashboard.naplata.deleteConfirm', { service: r.priceCatalogName ?? '—', price: fmtMoney(r.price) }),
+    header:  t('common.confirmDelete'),
+    icon:    'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.delete'), severity: 'danger' },
+    accept: async () => {
+      try {
+        await api.delete(`/customer-debts/${r.id}`);
+        await Promise.all([refreshDetail(), refreshDebts()]);
+        toast.add({ severity: 'success', summary: t('dashboard.naplata.deleted'), life: 2000 });
+      } catch (e: any) {
+        toast.add({ severity: 'error', summary: t('common.deleteFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+      }
+    },
+  });
+}
+
+/** Направи сметка for everything still unpaid in the detail dialog — selects those
+ * rows and reuses the existing bill dialog/flow on top. */
+function billDetailGroup() {
+  if (!detailGroup.value) return;
+  selectedDebtIds.value = new Set(detailUnpaidRows.value.map(r => r.id));
+  if (selectedDebtIds.value.size === 0) return;
+  openBillDialog();
+}
+
 const rolesText = computed(() => auth.roles.length ? auth.roles.join(', ') : t('dashboard.noRole'));
 
 function fmtDate(s: string | null): string {
@@ -315,6 +420,12 @@ onMounted(async () => {
     <div>
       <h1>{{ t('dashboard.welcome', { name: auth.fullName ?? auth.userName }) }}</h1>
       <div class="subtitle">{{ t('dashboard.role', { roles: rolesText }) }}</div>
+    </div>
+    <div class="dash-shortcuts">
+      <Button :label="t('dashboard.newIdl')" icon="pi pi-id-card" size="small" outlined
+              @click="router.push('/international-driving-licences/new')" />
+      <Button :label="t('dashboard.newPermission')" icon="pi pi-file-check" size="small" outlined
+              @click="router.push('/vehicle-permissions/new')" />
     </div>
   </div>
 
@@ -405,6 +516,10 @@ onMounted(async () => {
               <span v-if="g.vehicleMakerModel"> · {{ g.vehicleMakerModel }}</span>
             </span>
             <span class="grp-total mono">{{ fmtMoney(g.total) }}</span>
+            <button class="grp-detail-btn" @click.stop="openDetail(g)"
+                    v-tooltip.left="t('dashboard.naplata.details')">
+              <i class="pi pi-window-maximize" />
+            </button>
           </div>
           <div v-for="r in g.rows" :key="r.id" class="grp-row"
                :class="{ selected: isSelected(r.id), 'row-paid': r.paid }">
@@ -522,6 +637,81 @@ onMounted(async () => {
       <span>{{ t('dashboard.recentExams.empty') }}</span>
     </div>
   </div>
+
+  <!-- Детали на сметка dialog — view / add / delete ставки for one client account -->
+  <Dialog v-model:visible="detailVisible" :header="t('dashboard.naplata.details')"
+          modal class="debt-detail-dialog" :style="{ width: '680px', maxWidth: '96vw' }">
+    <div v-if="detailGroup" class="detail-head">
+      <b>{{ detailGroup.clientName || '—' }}</b>
+      <span v-if="detailGroup.clientMB" class="muted mono">· {{ detailGroup.clientMB }}</span>
+      <span v-if="detailGroup.vehiclePlate" class="plate">{{ detailGroup.vehiclePlate }}</span>
+      <span v-if="detailGroup.vehicleMakerModel" class="muted">· {{ detailGroup.vehicleMakerModel }}</span>
+    </div>
+
+    <div class="detail-rows">
+      <div class="detail-row detail-row-head">
+        <span class="col-service">{{ t('dashboard.naplata.col.service') }}</span>
+        <span class="col-note">{{ t('dashboard.naplata.col.note') }}</span>
+        <span class="col-date">{{ t('dashboard.naplata.col.date') }}</span>
+        <span class="col-price">{{ t('dashboard.naplata.col.price') }}</span>
+        <span class="col-x"></span>
+      </div>
+      <div v-for="r in detailRows" :key="r.id" class="detail-row" :class="{ 'row-paid': r.paid }">
+        <span class="col-service" :title="r.priceCatalogName ?? ''">{{ r.priceCatalogName || '—' }}</span>
+        <span class="col-note muted" :title="r.note ?? ''">{{ r.note || '' }}</span>
+        <span class="col-date muted">{{ fmtDate(r.createdAt) }}</span>
+        <span class="col-price mono">
+          {{ fmtMoney(r.price) }}
+          <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+        </span>
+        <span class="col-x">
+          <button v-if="!r.paid" class="row-del" @click="deleteDetailRow(r)"
+                  v-tooltip.left="t('dashboard.naplata.delete')">
+            <i class="pi pi-trash" />
+          </button>
+        </span>
+      </div>
+      <div v-if="detailLoading" class="empty"><i class="pi pi-spin pi-spinner" /></div>
+      <div v-else-if="!detailRows.length" class="empty"><span>{{ t('dashboard.naplata.empty') }}</span></div>
+    </div>
+
+    <div class="detail-add">
+      <AutoComplete
+        v-model="pcSelected"
+        :suggestions="pcOptions"
+        :optionLabel="(p: any) => pcLabel(p)"
+        :placeholder="t('dashboard.naplata.addItemPlaceholder')"
+        class="add-service"
+        @complete="searchPriceCatalog"
+        @option-select="onPcSelect"
+      >
+        <template #option="{ option }">
+          <div class="pc-opt">
+            <span class="pc-opt-name">{{ pcLabel(option) }}</span>
+            <span class="pc-opt-price mono">{{ fmtMoney(option.basePrice) }}</span>
+          </div>
+        </template>
+      </AutoComplete>
+      <InputNumber v-model="addPrice" :min="0" :maxFractionDigits="2"
+                   :placeholder="t('dashboard.naplata.col.price')" class="add-price" />
+      <InputText v-model="addNote" :placeholder="t('dashboard.naplata.col.note')" class="add-note" />
+      <Button icon="pi pi-plus" :label="t('dashboard.naplata.addItem')" size="small"
+              :disabled="!pcSelected || typeof pcSelected === 'string' || addSaving"
+              :loading="addSaving" @click="addDetailItem" />
+    </div>
+
+    <template #footer>
+      <div class="detail-footer">
+        <span class="muted">{{ t('dashboard.naplata.total') }}</span>
+        <span class="mono detail-total"><b>{{ fmtMoney(detailUnpaidTotal) }}</b> <span class="muted">{{ t('dashboard.naplata.den') }}</span></span>
+        <span class="spacer"></span>
+        <Button :label="t('dashboard.naplata.makeBill', { n: detailUnpaidRows.length })"
+                icon="pi pi-file" size="small"
+                :disabled="detailUnpaidRows.length === 0"
+                @click="billDetailGroup" />
+      </div>
+    </template>
+  </Dialog>
 
   <!-- Направи сметка dialog -->
   <Dialog v-model:visible="billDialogVisible" :header="t('dashboard.naplata.makeBillTitle')"
@@ -678,6 +868,8 @@ onMounted(async () => {
 .naplata-head .col-note,
 .naplata-head .col-price { line-height: 1 }
 .naplata-actions { display: flex; gap: .35rem; align-items: center }
+.dash-shortcuts { display: flex; gap: .5rem; align-items: center }
+.dash-shortcuts :deep(.p-button) { font-size: .8125rem; padding: .3rem .75rem }
 .bill-form { display: flex; flex-direction: column; gap: .6rem }
 .bill-row { display: flex; justify-content: space-between; font-size: .9rem }
 .bill-field { display: flex; flex-direction: column; gap: .3rem; margin-top: .4rem }
@@ -735,4 +927,58 @@ onMounted(async () => {
 }
 .plate { font-family: monospace; font-weight: 600 }
 .mono  { font-family: monospace }
+
+/* --- Детали на сметка dialog --- */
+.grp-detail-btn {
+  flex: 0 0 auto;
+  background: none; border: 0; color: var(--p-primary-color); cursor: pointer;
+  padding: 0 2px; font-size: .72rem; line-height: 1;
+}
+.grp-detail-btn:hover { opacity: .8 }
+
+.detail-head {
+  display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap;
+  font-size: .82rem; margin-bottom: .5rem;
+}
+.detail-rows { font-size: .78rem; line-height: 1.25 }
+.detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) 5.2rem 6.8rem 1.4rem;
+  gap: .5rem; align-items: center;
+  padding: 2px .35rem;
+}
+.detail-row:hover:not(.detail-row-head) { background: var(--p-content-hover-background, rgba(0,0,0,.04)) }
+.detail-row-head {
+  font-weight: 600; font-size: .68rem; letter-spacing: .04em;
+  color: var(--p-text-muted-color);
+  border-bottom: 1px solid var(--p-content-border-color);
+  padding-bottom: 3px;
+}
+.detail-row .col-service, .detail-row .col-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.detail-row .col-price { text-align: right; white-space: nowrap }
+.detail-row .col-date { white-space: nowrap }
+.detail-row.row-paid { opacity: .55 }
+.row-del {
+  background: none; border: 0; cursor: pointer; padding: 0 2px;
+  color: var(--p-red-500, #ef4444); font-size: .72rem; line-height: 1;
+}
+.row-del:hover { opacity: .75 }
+
+.detail-add {
+  display: flex; gap: .4rem; align-items: center;
+  margin-top: .6rem; padding-top: .5rem;
+  border-top: 1px solid var(--p-content-border-color);
+}
+.detail-add .add-service { flex: 1 1 auto; min-width: 0 }
+.detail-add .add-service :deep(input) { width: 100%; font-size: .78rem }
+.detail-add .add-price { width: 6.5rem }
+.detail-add .add-price :deep(input) { font-size: .78rem }
+.detail-add .add-note { width: 9rem; font-size: .78rem }
+.pc-opt { display: flex; justify-content: space-between; gap: 1rem; font-size: .78rem; max-width: 480px }
+.pc-opt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pc-opt-price { flex: 0 0 auto }
+
+.detail-footer { display: flex; align-items: baseline; gap: .5rem; width: 100%; font-size: .82rem }
+.detail-footer .spacer { flex: 1 }
+.detail-total { font-size: .9rem }
 </style>

@@ -8,5 +8,7 @@ public class ClientPersonalData
     public byte DocumentIssuerId { get; set; }
     public string Number { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Document expiry ("важи до"). Null for legacy rows — the old system never stored it.</summary>
+    public DateTime? ExpiresAt { get; set; }
     public bool Active { get; set; } = true;
 }

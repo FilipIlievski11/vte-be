@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import { api } from '@/api/client';
+import { openPrintTab } from '@/utils/print';
 import { useAuthStore } from '@/stores/auth';
 import type {
   Client, Company, Paged,
@@ -429,7 +430,7 @@ async function doEnd() {
 function openPrint() {
   if (!requestId.value) return;
   const route = router.resolve({ name: 'request-print', params: { id: requestId.value } });
-  window.open(route.href, '_blank');
+  openPrintTab(route.href);
 }
 
 async function loadRequest() {

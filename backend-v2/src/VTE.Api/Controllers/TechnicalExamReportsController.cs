@@ -80,6 +80,7 @@ public class TechnicalExamReportsController : ControllerBase
         [FromQuery] string? result = "all",      // "all" | "pass" | "fail"
         [FromQuery] int? typeId = null,
         [FromQuery] long? customerVehicleRelationId = null,
+        [FromQuery] long? vehicleId = null,
         [FromQuery] bool includeInactive = false,
         [FromQuery] string? sort = null,
         [FromQuery] string? dir = null,
@@ -95,6 +96,15 @@ public class TechnicalExamReportsController : ControllerBase
         if (typeId.HasValue) query = query.Where(r => r.TechnicalExamTypeId == typeId.Value);
         if (customerVehicleRelationId.HasValue)
             query = query.Where(r => r.CustomerVehicleRelationId == customerVehicleRelationId.Value);
+        // Vehicle history: exams hang off relations, so a vehicle's exams span ALL
+        // of its relations (current + historical owners).
+        if (vehicleId.HasValue)
+        {
+            var relIds = _db.ClientVehicleRelations.AsNoTracking()
+                .Where(cvr => cvr.VehicleId == vehicleId.Value)
+                .Select(cvr => (long?)cvr.Id);
+            query = query.Where(r => relIds.Contains(r.CustomerVehicleRelationId));
+        }
 
         var res = (result ?? "all").Trim().ToLowerInvariant();
         if (res == "pass")      query = query.Where(r => r.VehicleIsRight);
@@ -558,7 +568,7 @@ public class TechnicalExamReportsController : ControllerBase
 
     // ---- Lookups for the create/edit form ----
 
-    public record OrgLookupDto(int Id, string? Code, string? Name);
+    public record OrgLookupDto(int Id, string? Code, string? Name, byte? CompanyId);
     public record StatusLookupDto(int Id, string Name);
     public record PartLookupDto(int Id, int CategoryId, string Code, string Description);
     public record ControllerLookupDto(int Id, string FullName);
@@ -567,7 +577,7 @@ public class TechnicalExamReportsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<OrgLookupDto>>> Organizations() =>
         Ok(await _db.TechnicalExamOrganizations.AsNoTracking().Where(o => o.Active)
             .OrderBy(o => o.Name)
-            .Select(o => new OrgLookupDto(o.Id, o.Code, o.Name)).ToListAsync());
+            .Select(o => new OrgLookupDto(o.Id, o.Code, o.Name, o.CompanyId)).ToListAsync());
 
     [HttpGet("detail-statuses")]
     public async Task<ActionResult<IReadOnlyList<StatusLookupDto>>> DetailStatuses() =>

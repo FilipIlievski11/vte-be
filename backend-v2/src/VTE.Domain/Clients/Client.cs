@@ -19,6 +19,21 @@ public class Client : ITenantOwned
     public string? Email { get; set; }
     public DateTime? DateOfBirth { get; set; }
     public string? Note { get; set; }
+
+    // ---- Profile fields (legacy Customers parity — added for the Полномошна screen) ----
+    /// <summary>Име на родител. Legacy: ParentName.</summary>
+    public string? ParentName { get; set; }
+    /// <summary>Место на раѓање. Legacy: IdBirhCity [sic].</summary>
+    public int? BirthCityId { get; set; }
+    /// <summary>Legacy: Fax.</summary>
+    public string? Fax { get; set; }
+    /// <summary>Професија. Legacy: Occupation.</summary>
+    public string? Profession { get; set; }
+    /// <summary>Работодавач. Legacy: WorksInCompany.</summary>
+    public string? Employer { get; set; }
+    /// <summary>Дозвола за известување. Legacy: CanSendNotifications.</summary>
+    public bool? NotificationsAllowed { get; set; }
+
     public bool? Active { get; set; } = true;
     public DateTime? CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -2,17 +2,17 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VTE.Api.Dtos;
+using VTE.Domain.Payments;
 using VTE.Infrastructure.Persistence;
 using VTE.Infrastructure.Tenancy;
 
 namespace VTE.Api.Controllers;
 
 /// <summary>
-/// Read API over <see cref="VTE.Domain.Payments.CustomerDebt"/> — the v2 mirror of
+/// API over <see cref="VTE.Domain.Payments.CustomerDebt"/> — the v2 mirror of
 /// legacy <c>CustomerFinancialState</c>. Backs the dashboard "Наплата" panel:
-/// open debts grouped by client → vehicle.
-///
-/// Phase 2 will add POST / settle endpoints; for now read-only.
+/// open debts grouped by client → vehicle, manual add (Детали на сметка),
+/// single + bulk delete. Settlement happens via payment-documents/from-debts.
 /// </summary>
 [ApiController]
 [Route("api/customer-debts")]
@@ -176,6 +176,69 @@ public class CustomerDebtsController : ControllerBase
         var count = await q.CountAsync();
         var sum = await q.SumAsync(d => (decimal?)d.Price) ?? 0m;
         return Ok(new { count, total = sum });
+    }
+
+    public record CreateDebtDto(
+        long CustomerVehicleRelationId,
+        int PriceCatalogId,
+        decimal? Price,      // null → PriceCatalog.BasePrice
+        string? Note);
+
+    /// <summary>Manually add an open debt (ставка) to a client's account — the dashboard
+    /// "Детали на сметка" dialog. Price defaults to the catalog rule's BasePrice but the
+    /// operator can override it; VAT % is always snapshotted from the rule's VatRate.
+    /// Origin = Manual (legacy parity: operators could insert CustomerFinancialState rows
+    /// by hand from the dashboard's payment-catalog picker).</summary>
+    [HttpPost]
+    public async Task<ActionResult<object>> Create([FromBody] CreateDebtDto dto)
+    {
+        // Relation must exist and be visible in this tenant (query filter applies).
+        var relExists = await _db.ClientVehicleRelations.AsNoTracking()
+            .AnyAsync(r => r.Id == dto.CustomerVehicleRelationId);
+        if (!relExists) return BadRequest(new { error = "Клиентската релација не постои." });
+
+        var pc = await _db.PriceCatalogs.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == dto.PriceCatalogId);
+        if (pc == null) return BadRequest(new { error = "Ставката од ценовникот не постои." });
+
+        var price = dto.Price ?? pc.BasePrice;
+        if (price < 0) return BadRequest(new { error = "Цената не може да биде негативна." });
+
+        var vatPercent = await _db.VatRates.AsNoTracking()
+            .Where(v => v.Id == pc.VatRateId)
+            .Select(v => (double?)v.Percent)
+            .FirstOrDefaultAsync() ?? 0d;
+
+        // Station org: same as the tenant's debts so bill numbering (grouped per
+        // OrganizationId in from-debts) keeps one sequence.
+        var organizationId = await _db.CustomerDebts.AsNoTracking()
+            .OrderByDescending(d => d.Id)
+            .Select(d => (int?)d.OrganizationId)
+            .FirstOrDefaultAsync();
+        if (organizationId is null or 0)
+            return BadRequest(new { error = "Не може да се одреди организација — нема постоечки ставки." });
+
+        var note = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
+        if (note?.Length > 300) note = note[..300];
+
+        var debt = new CustomerDebt
+        {
+            CompanyId = _tenant.CompanyId ?? (byte)4,
+            CustomerVehicleRelationId = dto.CustomerVehicleRelationId,
+            PriceCatalogId = pc.Id,
+            Price = price,
+            VatPercent = vatPercent,
+            Note = note,
+            Origin = DebtOrigin.Manual,
+            OrganizationId = organizationId.Value,
+            Paid = false,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByUserId = _tenant.UserId,
+            Active = true,
+        };
+        _db.CustomerDebts.Add(debt);
+        await _db.SaveChangesAsync();
+        return Ok(new { id = debt.Id });
     }
 
     /// <summary>Soft-delete a debt row (sets Active=false). Tenant-scoped via the EF query
