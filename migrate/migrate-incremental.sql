@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- INCREMENTAL top-up: pull NEW legacy records (Id > current target max) from the
 -- LIVE remote DB (linked server [VTEZVV_LIVE] → 195.26.159.162,7899 / VTEZVV)
 -- into VTE. Purely additive — never wipes or updates existing rows.
@@ -36,15 +36,19 @@ IF @adminId IS NULL
 BEGIN RAISERROR('Admin user not found. Boot the API once so DataSeeder creates it.', 16, 1); RETURN; END;
 
 -- Capture the "before" high-water marks so each section inserts only new rows.
-DECLARE @bClient bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Client);
-DECLARE @bVeh    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Vehicle);
-DECLARE @bReg    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.VehicleRegistration);
-DECLARE @bRel    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.ClientVehicleRelation);
-DECLARE @bReq    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Request);
-DECLARE @bOwn    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.RequestOwnershipProof);
-DECLARE @bPay    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.RequestPaymentProof);
-DECLARE @bTeh    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.TechnicalExamReport);
-DECLARE @bTehD   bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.TechnicalExamReportDetail);
+-- Since v2 went live it creates its OWN rows with identities reseeded to the 10M floor
+-- (migrate/fix-v2-native-id-space.sql). Watermarks must ignore those — only ids BELOW
+-- the floor mirror legacy 1:1.
+DECLARE @v2floor bigint = 10000000;
+DECLARE @bClient bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Client                    WHERE Id < @v2floor);
+DECLARE @bVeh    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Vehicle                   WHERE Id < @v2floor);
+DECLARE @bReg    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.VehicleRegistration       WHERE Id < @v2floor);
+DECLARE @bRel    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.ClientVehicleRelation     WHERE Id < @v2floor);
+DECLARE @bReq    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.Request                   WHERE Id < @v2floor);
+DECLARE @bOwn    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.RequestOwnershipProof     WHERE Id < @v2floor);
+DECLARE @bPay    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.RequestPaymentProof       WHERE Id < @v2floor);
+DECLARE @bTeh    bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.TechnicalExamReport       WHERE Id < @v2floor);
+DECLARE @bTehD   bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.TechnicalExamReportDetail WHERE Id < @v2floor);
 DECLARE @fallbackIssuer tinyint = (SELECT TOP 1 Id FROM dbo.DocumentIssuer ORDER BY Id);
 DECLARE @rows int;
 PRINT CONCAT('Before maxes — Client:', @bClient, ' Vehicle:', @bVeh, ' Reg:', @bReg,
@@ -55,14 +59,25 @@ PRINT CONCAT('Before maxes — Client:', @bClient, ' Vehicle:', @bVeh, ' Reg:', 
 -- ============================================================================
 PRINT '=== Client ===';
 SET IDENTITY_INSERT dbo.Client ON;
+-- Name order: legacy stores the SURNAME in CustomerFirstName for persons (see
+-- migrate/fix-client-name-order.sql, applied 2026-07-01) — swap on the way in.
+-- Companies keep the full firm name in FirstName. Citizenship: legacy never stored it
+-- (IdCitizenship=0) — default to Македонско per the standing backfill policy
+-- (migrate/backfill-client-citizenship.sql, dominant row = 77).
 INSERT INTO dbo.Client (Id, CompanyId, CityId, CitizenshipId, Business,
-  FirstName, MiddleName, LastName, MB, Address,
+  FirstName, MiddleName, ParentName, LastName, MB, Address,
   TaxNumber, PhoneNumber, Email, DateOfBirth, Note, Active, CreatedAt)
 SELECT
-  c.Id, CAST(4 AS tinyint), ci.Id, cz.Id, c.IsCompany,
-  NULLIF(LTRIM(RTRIM(c.CustomerFirstName)), N''),
+  c.Id, CAST(4 AS tinyint), ci.Id,
+  COALESCE(cz.Id, (SELECT TOP 1 z.Id FROM dbo.Citizenship z WHERE z.Name = N'Македонско' ORDER BY z.Id)),
+  c.IsCompany,
+  CASE WHEN c.IsCompany = 1 THEN NULLIF(LTRIM(RTRIM(c.CustomerFirstName)), N'')
+       ELSE COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerSurname)), N''), NULLIF(LTRIM(RTRIM(c.CustomerFirstName)), N'')) END,
   NULLIF(LTRIM(RTRIM(c.ParentName)),        N''),
-  NULLIF(LTRIM(RTRIM(c.CustomerSurname)),   N''),
+  NULLIF(LTRIM(RTRIM(c.ParentName)),        N''),
+  CASE WHEN c.IsCompany = 1 THEN NULLIF(LTRIM(RTRIM(c.CustomerSurname)), N'')
+       ELSE CASE WHEN NULLIF(LTRIM(RTRIM(c.CustomerSurname)), N'') IS NULL THEN NULL
+                 ELSE NULLIF(LTRIM(RTRIM(c.CustomerFirstName)), N'') END END,
   NULLIF(LTRIM(RTRIM(c.MB)),                N''),
   NULLIF(LTRIM(RTRIM(CONCAT_WS(N' ',
       NULLIF(LTRIM(RTRIM(s.StreetName)),          N''),
@@ -79,7 +94,6 @@ LEFT JOIN dbo.Citizenship cz ON cz.CountryId = NULLIF(c.IdCitizenship, 0)
 WHERE c.Id > @bClient;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.Client OFF;
-DBCC CHECKIDENT('dbo.Client', RESEED) WITH NO_INFOMSGS;
 PRINT CONCAT('  -> ', @rows, ' new Clients.');
 
 -- 1b. ClientPersonalData for the new clients (3 types)
@@ -189,45 +203,55 @@ LEFT JOIN dbo.VehiclePaymentCategory pc ON pc.Id = CASE WHEN v.IdVehicleCategory
 WHERE v.Id > @bVeh;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.Vehicle OFF;
-DBCC CHECKIDENT('dbo.Vehicle', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new Vehicles.');
 
 -- ============================================================================
--- 3. VehicleRegistration (Id > @bReg)
+-- 3. VehicleRegistration (gap-fill, Id < 10M)
 -- ============================================================================
 PRINT '=== VehicleRegistration ===';
+-- Gap-fill (NOT EXISTS), not a watermark: the bulk migration + earlier filters left
+-- holes below the max id which a watermark can never revisit.
+-- Issuer resolves to NULL when legacy has none (IdRegistrationIssuer=0) — those rows
+-- carry real plates (51 were the vehicle's LATEST registration) and must not be dropped.
 SET IDENTITY_INSERT dbo.VehicleRegistration ON;
 INSERT INTO dbo.VehicleRegistration (Id, VehicleId, IssuerId, PlateNumber, RegisteredDate, ValidUntil, IsFirstRegistration, Active)
-SELECT r.Id, r.IdVehicle, CAST(r.IdRegistrationIssuer AS tinyint), LTRIM(RTRIM(r.RegistrationNumber)),
+SELECT r.Id, r.IdVehicle, di.Id, LTRIM(RTRIM(r.RegistrationNumber)),
        r.DateOfRegistration, r.DateRegistrationValidTill, r.IsFirstRegistration, r.Active
 FROM VTEZVV_LIVE.VTEZVV.dbo.[Vehicle.Registrations] r
 INNER JOIN dbo.Vehicle        v  ON v.Id  = r.IdVehicle
-INNER JOIN dbo.DocumentIssuer di ON di.Id = CASE WHEN r.IdRegistrationIssuer BETWEEN 1 AND 255 THEN CAST(r.IdRegistrationIssuer AS tinyint) END
-WHERE r.Id > @bReg AND r.RegistrationNumber IS NOT NULL AND LEN(LTRIM(RTRIM(r.RegistrationNumber))) > 0;
+LEFT  JOIN dbo.DocumentIssuer di ON di.Id = CASE WHEN r.IdRegistrationIssuer BETWEEN 1 AND 255 THEN CAST(r.IdRegistrationIssuer AS tinyint) END
+WHERE r.Id < 10000000 AND r.RegistrationNumber IS NOT NULL AND LEN(LTRIM(RTRIM(r.RegistrationNumber))) > 0
+  AND NOT EXISTS (SELECT 1 FROM dbo.VehicleRegistration x WHERE x.Id = r.Id);
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.VehicleRegistration OFF;
-DBCC CHECKIDENT('dbo.VehicleRegistration', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new VehicleRegistrations.');
 
 -- ============================================================================
--- 4. ClientVehicleRelation (Id > @bRel)
+-- 4. ClientVehicleRelation (gap-fill, Id < 10M)
 -- ============================================================================
 PRINT '=== ClientVehicleRelation ===';
+-- Gap-fill (NOT EXISTS), not a watermark: the bulk migration's stricter filters left
+-- ~7.7k holes below the max id (vehicle=0 sentinels, inactive relations…) which the
+-- old `Id > @bRel` could never revisit — open legacy debts anchored on those relations
+-- were silently unimportable. Vehicle resolves to NULL when 0/missing; relations whose
+-- CLIENT is a legacy orphan stay excluded (INNER JOIN).
 SET IDENTITY_INSERT dbo.ClientVehicleRelation ON;
 INSERT INTO dbo.ClientVehicleRelation (Id, ClientId, VehicleId, RelationTypeId, StartDate, EndDate, StartNote, EndNote, Active)
 SELECT r.Id, r.IdCustomer,
-  CASE WHEN r.IdVehicle IS NOT NULL AND v.Id IS NOT NULL THEN r.IdVehicle END,
+  CASE WHEN v.Id IS NOT NULL THEN r.IdVehicle END,
   CAST(r.IdRelationType AS tinyint), r.StartDate, r.EndDate,
   NULLIF(LTRIM(RTRIM(r.BeginNote)), N''), NULLIF(LTRIM(RTRIM(r.TerminationNote)), N''), r.Active
 FROM VTEZVV_LIVE.VTEZVV.dbo.CustomerVehiclesRelations r
 INNER JOIN dbo.Client                     c  ON c.Id  = r.IdCustomer
 INNER JOIN dbo.ClientVehicleRelationType rt ON rt.Id = CAST(r.IdRelationType AS tinyint)
-LEFT  JOIN dbo.Vehicle                    v  ON v.Id  = r.IdVehicle
-WHERE r.Id > @bRel
-  AND ((r.IdVehicle IS NULL AND rt.IsCustomerOnly = 1) OR (v.Id IS NOT NULL));
+LEFT  JOIN dbo.Vehicle                    v  ON v.Id  = NULLIF(r.IdVehicle, 0)
+WHERE r.Id < 10000000
+  AND NOT EXISTS (SELECT 1 FROM dbo.ClientVehicleRelation x WHERE x.Id = r.Id);
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.ClientVehicleRelation OFF;
-DBCC CHECKIDENT('dbo.ClientVehicleRelation', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new ClientVehicleRelations.');
 
 -- ============================================================================
@@ -259,7 +283,7 @@ INNER JOIN dbo.RequestType rt ON rt.Id = CASE WHEN r.IdRequestType BETWEEN 1 AND
 WHERE r.Id > @bReq;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.Request OFF;
-DBCC CHECKIDENT('dbo.Request', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new Requests.');
 
 -- ============================================================================
@@ -275,7 +299,7 @@ INNER JOIN dbo.RequestOwnershipProofType ot ON ot.Id = CASE WHEN p.IdVehicleOwne
 WHERE p.Id > @bOwn;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.RequestOwnershipProof OFF;
-DBCC CHECKIDENT('dbo.RequestOwnershipProof', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new OwnershipProofs.');
 
 SET IDENTITY_INSERT dbo.RequestPaymentProof ON;
@@ -287,7 +311,7 @@ INNER JOIN dbo.RequestPaymentProofType pt ON pt.Id = CASE WHEN p.IdPaymentProof 
 WHERE p.Id > @bPay;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.RequestPaymentProof OFF;
-DBCC CHECKIDENT('dbo.RequestPaymentProof', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new PaymentProofs.');
 
 -- ============================================================================
@@ -372,7 +396,7 @@ LEFT JOIN dbo.ClientVehicleRelation cvr ON cvr.Id = r.IdCustomerVehicleRelation
 WHERE r.Id > @bTeh;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.TechnicalExamReport OFF;
-DBCC CHECKIDENT('dbo.TechnicalExamReport', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new TechnicalExamReports.');
 
 PRINT '=== TechnicalExamReportDetail ===';
@@ -387,7 +411,7 @@ INNER JOIN dbo.TechnicalExamReport p ON p.Id = d.IdTehnicalExamsReports
 WHERE d.Id > @bTehD;
 SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.TechnicalExamReportDetail OFF;
-DBCC CHECKIDENT('dbo.TechnicalExamReportDetail', RESEED) WITH NO_INFOMSGS;
+-- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new TechnicalExamReportDetails.');
 
 -- ============================================================================
@@ -438,6 +462,12 @@ FROM VTEZVV_LIVE.VTEZVV.dbo.CustomerFinancialState s
 INNER JOIN dbo.ClientVehicleRelation rel ON rel.Id = s.IdCustomerVehicleRelation
 INNER JOIN dbo.PriceCatalog pc ON pc.Id = s.IdPriceCatalog
 WHERE s.Payed = 0 AND s.Active = 1
+  -- Mirror legacy VISIBILITY, not raw table state: the legacy dashboard reads
+  -- depCustomerFinansicalStateView which INNER JOINs Vehicles (+Model+Maker), so a
+  -- debt on a vehicle-less relation NEVER shows in legacy — it is dead debris there
+  -- (371 such rows, some since 2012). Importing them floods Наплата with items the
+  -- station has never seen. v2-native debts (LegacyId NULL) are unaffected.
+  AND rel.VehicleId IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM dbo.CustomerDebt d WHERE d.LegacyId = s.Id);
 PRINT CONCAT('  -> ', @@ROWCOUNT, ' new open debts imported.');
 
@@ -454,6 +484,157 @@ WHERE d.LegacyId IS NOT NULL
 PRINT CONCAT('  -> ', @@ROWCOUNT, ' imported debts state-synced (paid/storno).');
 
 -- ============================================================================
+-- 11. PaymentDocument / PaymentDocumentLine / InstallmentAgreement /
+--     InstallmentSchedule ← the billing mirror (needed by the monthly
+--     „Јавни патишта" report and Плаќања).
+--
+--     Cheap per-sync strategy (these tables are too big for full re-scans):
+--       a) APPEND new rows via Id watermark (id-floor 10M keeps v2-native rows
+--          out of the legacy range — see fix-payment-id-space.sql);
+--       b) STATE-SYNC a 90-day window: doc Active/Note/DatePay/Payed/Storno
+--          (storno + payment normally happen near creation) and rata payments
+--          by recent DatePayed regardless of age.
+--     Holes below the watermark are repaired by the manual
+--     backfill-payment-holes.sql (bulk-era exclusions), not here.
+-- ============================================================================
+PRINT '=== InstallmentAgreement (append) ===';
+DECLARE @bAgr bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.InstallmentAgreement WHERE Id < @v2floor);
+SET IDENTITY_INSERT dbo.InstallmentAgreement ON;
+INSERT INTO dbo.InstallmentAgreement (Id, CompanyId, Number, [Date], TotalInstallments,
+                                      GuarantorName, GuarantorAddress, GuarantorEmbg,
+                                      Active, CreatedAt, ModifiedAt)
+SELECT i.Id, CONVERT(tinyint, 4), LEFT(ISNULL(i.Broj, N''), 40), CONVERT(date, i.Datum),
+       ISNULL(i.BrNaRati, 0), LEFT(i.GarantNaziv, 200), LEFT(i.GarantAdresa, 300),
+       LEFT(i.GartEMB, 13), ISNULL(i.Active, CONVERT(bit, 1)), GETUTCDATE(), NULL
+FROM VTEZVV_LIVE.VTEZVV.dbo.DogovorZaRati i
+WHERE i.Id > @bAgr AND i.Id < @v2floor;
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.InstallmentAgreement OFF;
+PRINT CONCAT('  -> ', @rows, ' new agreements.');
+
+PRINT '=== PaymentDocument (append) ===';
+DECLARE @bDoc bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.PaymentDocument WHERE Id < @v2floor);
+SELECT p.Id, p.IdPaymentType, p.IdCustomerVehicleRelation, p.IdOperator, p.IdOrganization,
+       p.DocumentNumber, p.DatePay, p.DateRequired, p.Discount, p.Payed, p.Storno,
+       p.Note, p.IdDogovor, p.IdFakturiraNa, p.Active
+INTO #newDoc
+FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocuments p
+WHERE p.Id > @bDoc AND p.Id < @v2floor;
+
+SET IDENTITY_INSERT dbo.PaymentDocument ON;
+INSERT INTO dbo.PaymentDocument
+    (Id, CompanyId, PaymentTypeId, CustomerVehicleRelationId, OperatorLegacyId, OrganizationId,
+     DocumentNumber, IssueDate, DueDate, Discount, Paid, Stornoed, StornoReason, Note,
+     AgreementId, InvoicedToCompanyId, FiscalPrintedAt,
+     LegacyId, Active, CreatedAt, ModifiedAt, CreatedByUserId, ModifiedByUserId)
+SELECT
+    p.Id, CONVERT(tinyint, 4), p.IdPaymentType, p.IdCustomerVehicleRelation,
+    NULLIF(p.IdOperator, 0), p.IdOrganization,
+    COALESCE(p.DocumentNumber, ''), p.DatePay, p.DateRequired, p.Discount,
+    CONVERT(bit, COALESCE(p.Payed, 0)), CONVERT(bit, COALESCE(p.Storno, 0)), NULL, p.Note,
+    CASE WHEN EXISTS (SELECT 1 FROM dbo.InstallmentAgreement ia WHERE ia.Id = p.IdDogovor)
+         THEN p.IdDogovor ELSE NULL END,
+    NULLIF(p.IdFakturiraNa, 0), NULL,
+    p.Id, CONVERT(bit, COALESCE(p.Active, 1)), COALESCE(p.DatePay, GETUTCDATE()), NULL, NULL, NULL
+FROM #newDoc p
+INNER JOIN dbo.ClientVehicleRelation r ON r.Id = p.IdCustomerVehicleRelation
+INNER JOIN dbo.PaymentType          pt ON pt.Id = p.IdPaymentType
+WHERE NOT EXISTS (SELECT 1 FROM dbo.PaymentDocument x WHERE x.Id = p.Id);
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.PaymentDocument OFF;
+PRINT CONCAT('  -> ', @rows, ' new payment documents.');
+DROP TABLE #newDoc;
+
+PRINT '=== PaymentDocument (state-sync, 90d window) ===';
+SELECT p.Id, p.DatePay, p.Payed, p.Storno, p.Note, p.Active
+INTO #docState
+FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocuments p
+WHERE p.Id < @v2floor AND p.DatePay >= DATEADD(day, -90, GETDATE());
+
+UPDATE d SET d.IssueDate = s.DatePay, d.Paid = s.Payed, d.Stornoed = s.Storno,
+             d.Note = s.Note, d.Active = s.Active, d.ModifiedAt = SYSUTCDATETIME()
+FROM dbo.PaymentDocument d
+INNER JOIN #docState s ON s.Id = d.Id
+WHERE d.LegacyId IS NOT NULL
+  AND (d.Paid <> s.Payed OR d.Stornoed <> s.Storno OR d.Active <> s.Active
+       OR ISNULL(d.Note, N'') <> ISNULL(s.Note, N'') OR d.IssueDate <> s.DatePay);
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' documents state-synced.');
+DROP TABLE #docState;
+
+PRINT '=== PaymentDocumentLine (append) ===';
+DECLARE @bLine bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.PaymentDocumentLine WHERE Id < @v2floor);
+SELECT l.Id, l.IdPaymentDocuments, l.IdPriceCatalog, l.Price, l.DDV, l.Discount,
+       l.Note, l.PrePayed, l.NotePrePayed, l.Active
+INTO #newLine
+FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocumentsDetails l
+WHERE l.Id > @bLine AND l.Id < @v2floor;
+
+SET IDENTITY_INSERT dbo.PaymentDocumentLine ON;
+INSERT INTO dbo.PaymentDocumentLine
+    (Id, CompanyId, PaymentDocumentId, PriceCatalogId, UnitPrice, VatPercent,
+     Discount, Quantity, Note, PrePaid, PrePaidNote, CustomerDebtId, Active)
+SELECT
+    c.Id, CONVERT(tinyint, 4), c.IdPaymentDocuments,
+    CASE WHEN EXISTS (SELECT 1 FROM dbo.PriceCatalog pc WHERE pc.Id = c.IdPriceCatalog)
+         THEN c.IdPriceCatalog ELSE 999999 END,
+    CONVERT(decimal(18,4), c.Price), CONVERT(float, c.DDV),
+    CONVERT(float, COALESCE(c.Discount, 0)), 1,
+    LEFT(NULLIF(LTRIM(RTRIM(c.Note)), N''), 300),
+    CONVERT(bit, COALESCE(c.PrePayed, 0)), c.NotePrePayed, NULL,
+    CONVERT(bit, COALESCE(c.Active, 1))
+FROM #newLine c
+INNER JOIN dbo.PaymentDocument pd ON pd.Id = c.IdPaymentDocuments
+WHERE NOT EXISTS (SELECT 1 FROM dbo.PaymentDocumentLine x WHERE x.Id = c.Id);
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.PaymentDocumentLine OFF;
+PRINT CONCAT('  -> ', @rows, ' new payment lines.');
+DROP TABLE #newLine;
+
+PRINT '=== InstallmentSchedule (append + recent payments) ===';
+DECLARE @bSched bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.InstallmentSchedule WHERE Id < @v2floor);
+SELECT r.Id, r.IdPaymentDocument, r.Price, r.Payed, r.DatePayed,
+       r.IdOrganization, r.IdOperator, r.Note, r.Active
+INTO #newSched
+FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocumentsRata r
+WHERE r.Id > @bSched AND r.Id < @v2floor;
+
+SET IDENTITY_INSERT dbo.InstallmentSchedule ON;
+INSERT INTO dbo.InstallmentSchedule
+    (Id, CompanyId, PaymentDocumentId, SequenceNo, Amount, DueDate,
+     Paid, PaidAt, PaidAmount, OrganizationId, OperatorLegacyId, Note, Active)
+SELECT
+    c.Id, CONVERT(tinyint, 4), c.IdPaymentDocument,
+    CAST((SELECT COUNT(*) FROM dbo.InstallmentSchedule s2
+          WHERE s2.PaymentDocumentId = c.IdPaymentDocument AND s2.Id < c.Id) +
+         ROW_NUMBER() OVER (PARTITION BY c.IdPaymentDocument ORDER BY c.Id) AS int),
+    CONVERT(decimal(18,4), c.Price), NULL,
+    CONVERT(bit, COALESCE(c.Payed, 0)), c.DatePayed,
+    CASE WHEN COALESCE(c.Payed,0) = 1 THEN CONVERT(decimal(18,4), c.Price) ELSE NULL END,
+    NULLIF(c.IdOrganization, 0), NULLIF(c.IdOperator, 0), c.Note,
+    CONVERT(bit, COALESCE(c.Active, 1))
+FROM #newSched c
+INNER JOIN dbo.PaymentDocument pd ON pd.Id = c.IdPaymentDocument
+WHERE NOT EXISTS (SELECT 1 FROM dbo.InstallmentSchedule x WHERE x.Id = c.Id);
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.InstallmentSchedule OFF;
+PRINT CONCAT('  -> ', @rows, ' new installment schedules.');
+DROP TABLE #newSched;
+
+-- rata payments land whenever the customer shows up — sync by recent DatePayed,
+-- not by row age.
+SELECT r.Id, r.Payed, r.DatePayed, r.Price
+INTO #schedPay
+FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocumentsRata r
+WHERE r.Id < @v2floor AND r.Payed = 1 AND r.DatePayed >= DATEADD(day, -90, GETDATE());
+
+UPDATE s SET s.Paid = 1, s.PaidAt = p.DatePayed, s.PaidAmount = CONVERT(decimal(18,4), p.Price)
+FROM dbo.InstallmentSchedule s
+INNER JOIN #schedPay p ON p.Id = s.Id
+WHERE s.Paid = 0;
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' installment payments state-synced.');
+DROP TABLE #schedPay;
+
+-- ============================================================================
 -- Verification
 -- ============================================================================
 PRINT '';
@@ -467,7 +648,11 @@ UNION ALL SELECT 'OwnershipProof',       COUNT(*) FROM dbo.RequestOwnershipProof
 UNION ALL SELECT 'PaymentProof',         COUNT(*) FROM dbo.RequestPaymentProof   WHERE Id > @bPay
 UNION ALL SELECT 'TechnicalExamReport',  COUNT(*) FROM dbo.TechnicalExamReport       WHERE Id > @bTeh
 UNION ALL SELECT 'TechExamReportDetail', COUNT(*) FROM dbo.TechnicalExamReportDetail WHERE Id > @bTehD
-UNION ALL SELECT 'CustomerDebt',         COUNT(*) FROM dbo.CustomerDebt              WHERE Id > @bDebt;
+UNION ALL SELECT 'CustomerDebt',         COUNT(*) FROM dbo.CustomerDebt              WHERE Id > @bDebt
+UNION ALL SELECT 'PaymentDocument',      COUNT(*) FROM dbo.PaymentDocument           WHERE Id > @bDoc  AND Id < @v2floor
+UNION ALL SELECT 'PaymentDocumentLine',  COUNT(*) FROM dbo.PaymentDocumentLine       WHERE Id > @bLine AND Id < @v2floor
+UNION ALL SELECT 'InstallmentAgreement', COUNT(*) FROM dbo.InstallmentAgreement      WHERE Id > @bAgr  AND Id < @v2floor
+UNION ALL SELECT 'InstallmentSchedule',  COUNT(*) FROM dbo.InstallmentSchedule       WHERE Id > @bSched AND Id < @v2floor;
 
 COMMIT TRANSACTION;
 PRINT '';
