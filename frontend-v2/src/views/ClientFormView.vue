@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { announceClientCreated } from '@/utils/clientBus';
 import { useAuthStore } from '@/stores/auth';
 import type { Client, City, Citizenship, ClientPersonalData, Company, DocumentIssuer, VehicleRelationDto } from '@/types';
 import Button from 'primevue/button';
@@ -258,18 +259,24 @@ async function save() {
     }
 
     let clientId: number;
+    let created: Client | null = null;
     if (isEdit.value) {
       await api.put(`/clients/${props.id}`, payload);
       clientId = Number(props.id);
     } else {
       const { data } = await api.post<Client>('/clients', payload);
       clientId = data.id;
+      created = data;
     }
 
     // Personal documents — upsert per card, delete if cleared
     await persistDoc(clientId, 3, idCard.value);
     await persistDoc(clientId, 2, passport.value);
     await persistDoc(clientId, 1, drivingLicence.value);
+
+    // Јави им на другите јазичиња (форма отворена преку „Нов") — ПО документите,
+    // за пикерот што ќе се пополни таму да ги затекне и нив.
+    if (created) announceClientCreated(created);
 
     toast.add({
       severity: 'success',

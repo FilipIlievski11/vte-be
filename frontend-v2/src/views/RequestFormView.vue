@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import { api } from '@/api/client';
 import { openPrintTab } from '@/utils/print';
+import { onClientCreated } from '@/utils/clientBus';
 import { useAuthStore } from '@/stores/auth';
 import type {
   Client, Company, Paged,
@@ -605,11 +606,26 @@ function openVehicleEdit() {
   const id = selectedRelation.value?.vehicleId;
   if (id) window.open(router.resolve({ name: 'vehicle-edit', params: { id } }).href, '_blank');
 }
-function openOwnerNew()  { window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+// „Нов" отвора клиент-форма во ново јазиче; кога таму ќе се сними, BroadcastChannel-от
+// подолу го пополнува полето од кое е кликнато копчето (сопственик или нов сопственик).
+let newClientTarget: 'owner' | 'newOwner' = 'owner';
+function openOwnerNew()  { newClientTarget = 'owner'; window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+function openNewOwnerNew() { newClientTarget = 'newOwner'; window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
 function openOwnerEdit() {
   const id = currentClientId();
   if (id) window.open(router.resolve({ name: 'client-edit', params: { id } }).href, '_blank');
 }
+const offClientCreated = onClientCreated(async (c) => {
+  if (isEdit.value || isReadOnly.value) return;
+  const opt = toOwnerOpt(c.id, joinClientName(c), c.mb);
+  if (newClientTarget === 'newOwner' && requiresNewOwner.value) {
+    if (!newOwnerClientId.value) newOwnerSel.value = opt;
+  } else if (!ownerSelObj.value) {
+    ownerSel.value = opt;
+    await onOwnerSelect({ value: opt }); // нов клиент → празен список возила, операторот избира/креира возило
+  }
+});
+onUnmounted(offClientCreated);
 
 function fmtDateTime(s: string | null): string {
   if (!s) return '—';
@@ -855,7 +871,7 @@ onMounted(async () => {
               </template>
             </AutoComplete>
             <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
-              :disabled="isReadOnly" @click="openOwnerNew" v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
+              :disabled="isReadOnly" @click="openNewOwnerNew" v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
             <Button :label="t('common.edit')" icon="pi pi-pencil" severity="secondary" outlined size="small"
               :disabled="newOwnerClientId === null" @click="openNewOwnerEdit" />
           </div>

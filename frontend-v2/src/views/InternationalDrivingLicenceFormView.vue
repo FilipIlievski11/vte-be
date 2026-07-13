@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import { openPrintTab } from '@/utils/print';
+import { onClientCreated } from '@/utils/clientBus';
 import { useAuthStore } from '@/stores/auth';
 import type {
   Client, ClientPersonalData, DocumentIssuer, Paged,
@@ -226,6 +227,15 @@ function clientDisplayName(c: Client): string {
   return [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' ').trim() || `#${c.id}`;
 }
 
+// „Нов" — отвора нова картичка за клиент во ново јазиче (исто како кај Барања).
+// Штом таму се сними, BroadcastChannel-от долу го пополнува пикерот тука автоматски.
+function openClientNew() { window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+const offClientCreated = onClientCreated((c) => {
+  // само на празна нова форма — не клоберувај веќе избран сопственик
+  if (!isEdit.value && !selectedClient.value) void chooseClient(c);
+});
+onUnmounted(offClientCreated);
+
 function toggleCategory(id: number) {
   if (checkedCategoryIds.value.has(id)) checkedCategoryIds.value.delete(id);
   else checkedCategoryIds.value.add(id);
@@ -446,6 +456,9 @@ onMounted(async () => {
                     </div>
                   </template>
                 </AutoComplete>
+                <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+                        class="picker-new" @click="openClientNew"
+                        v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
                 <Button v-if="selectedClient" icon="pi pi-times" severity="secondary" outlined size="small"
                         class="picker-clear" @click="clearClient" />
               </div>
@@ -706,7 +719,8 @@ onMounted(async () => {
 .picker-ac { flex: 1 1 auto; }
 .picker-ac :deep(.p-autocomplete) { width: 100%; }
 .picker-ac :deep(.p-autocomplete-input) { width: 100%; }
-.picker-clear { flex: 0 0 auto; }
+.picker-clear,
+.picker-new { flex: 0 0 auto; }
 /* option rows inside the overlay (carry this component's data-v attr, so scoped CSS reaches them) */
 .ac-opt { display: flex; flex-direction: column; line-height: 1.25; }
 .ac-main { font-size: 0.85rem; color: var(--color-text); }

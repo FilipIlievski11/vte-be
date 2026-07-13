@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import { openPrintTab } from '@/utils/print';
+import { onClientCreated } from '@/utils/clientBus';
 import { useAuthStore } from '@/stores/auth';
 import type {
   Citizenship, City, Client, ClientPersonalData, Country, DocumentIssuer, Paged, TechExamOrgLookup,
@@ -248,6 +249,20 @@ function clearAuthorized() {
   authorized.value = {};
   authorizedDocs.value = { idCard: blankDoc(), passport: blankDoc(), licence: blankDoc() };
 }
+
+// „Нов" — отвора нова картичка за клиент во ново јазиче (исто како кај Барања).
+// Штом таму се сними, BroadcastChannel-от долу го пополнува пикерот тука автоматски.
+function openAuthorizedNew() { window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+const offClientCreated = onClientCreated(async (c) => {
+  // само на празна нова форма — не клоберувај веќе избрано овластено лице
+  if (isEdit.value || authorizedClientId.value) return;
+  authorizedClientId.value = c.id;
+  authorizedSel.value = toClientOpt(c);
+  authorizedSuggestions.value = [];
+  authorized.value = { ...c };
+  authorizedDocs.value = await loadDocs(c.id);
+});
+onUnmounted(offClientCreated);
 
 // Operator's org is always their own station
 const orgLocked = computed(() => auth.companyId != null && issuerOrganizationId.value != null);
@@ -733,6 +748,9 @@ const tp = (k: string) => t(`vehiclePermissions.form.${k}`);
                     </div>
                   </template>
                 </AutoComplete>
+                <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+                        class="picker-new" @click="openAuthorizedNew"
+                        v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
                 <Button v-if="authorizedClientId" icon="pi pi-times" severity="secondary" outlined size="small"
                         class="picker-clear" @click="clearAuthorized" />
               </div>
@@ -859,7 +877,8 @@ const tp = (k: string) => t(`vehiclePermissions.form.${k}`);
 .picker-ac { flex: 1 1 auto; }
 .picker-ac :deep(.p-autocomplete) { width: 100%; }
 .picker-ac :deep(.p-autocomplete-input) { width: 100%; }
-.picker-clear { flex: 0 0 auto; }
+.picker-clear,
+.picker-new { flex: 0 0 auto; }
 .ac-opt { display: flex; flex-direction: column; line-height: 1.25; }
 .ac-main { font-size: 0.85rem; color: var(--color-text); }
 .ac-sub { font-size: 0.75rem; color: var(--color-text-muted); }

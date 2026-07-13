@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, reactive, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { onClientCreated } from '@/utils/clientBus';
 import type {
   Client, Paged, VehicleRelationDto,
   TechExamType, TechExamReportFull, TechExamWrite, TechExamDetailWrite,
@@ -260,6 +261,15 @@ function clearClient() {
   relations.value = [];
   selectedRelationId.value = null;
 }
+
+// „Нов" — клиент-форма во ново јазиче (исто како кај Барања); штом таму се сними,
+// BroadcastChannel-от го пополнува пикерот тука автоматски.
+function openClientNew() { window.open(router.resolve({ name: 'client-new' }).href, '_blank'); }
+const offClientCreated = onClientCreated((c) => {
+  // само на нова форма без веќе избран клиент — не прегазувај
+  if (!isEdit.value && !selectedClient.value) chooseClient(c);
+});
+onUnmounted(offClientCreated);
 function clientDisplayName(c: Client): string {
   return [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' ').trim() || `#${c.id}`;
 }
@@ -464,7 +474,11 @@ onMounted(async () => {
             <Button icon="pi pi-times" text size="small" @click="clearClient" />
           </div>
           <div v-else>
-            <InputText v-model="clientQuery" :placeholder="t('requests.form.searchClient')" size="small" style="width:100%" />
+            <div class="search-row">
+              <InputText v-model="clientQuery" :placeholder="t('requests.form.searchClient')" size="small" style="width:100%" />
+              <Button :label="t('common.new')" icon="pi pi-plus" severity="secondary" outlined size="small"
+                      class="search-new" @click="openClientNew" v-tooltip.bottom="t('requests.form.newOwnerClientHint')" />
+            </div>
             <ul v-if="clientResults.length" class="search-list">
               <li v-for="c in clientResults" :key="c.id" @click="chooseClient(c)">
                 <strong>{{ clientDisplayName(c) }}</strong>
@@ -622,6 +636,8 @@ onMounted(async () => {
   padding: .4rem .75rem; border-radius: 6px }
 .picked-name { font-weight: 600 }
 .picked.locked { background: transparent; opacity: .85 }
+.search-row { display: flex; align-items: center; gap: 0.4rem; }
+.search-new { flex: 0 0 auto; white-space: nowrap; }
 .search-list { margin: 0; padding: 0; list-style: none;
   border: 1px solid var(--p-content-border-color); border-radius: 6px;
   max-height: 220px; overflow-y: auto; background: var(--p-content-background) }
