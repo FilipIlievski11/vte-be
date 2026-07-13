@@ -9,7 +9,6 @@ import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import InputText from 'primevue/inputtext';
 import Button from 'primevue/button';
-import Tag from 'primevue/tag';
 import Skeleton from 'primevue/skeleton';
 import { useToast } from 'primevue/usetoast';
 import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
@@ -162,8 +161,10 @@ const skeletonRows = Array.from({ length: 8 });
     </Column>
     <Column :header="t('internationalDrivingLicences.col.categories')">
       <template #body="{ data }">
-        <Tag v-for="c in data.categoryCodes" :key="c" :value="c" severity="secondary" style="margin-right:.25rem" />
-        <span v-if="!data.categoryCodes.length" class="muted">—</span>
+        <div v-if="data.categoryCodes.length" class="cat-chips">
+          <span v-for="c in data.categoryCodes" :key="c" class="cat-chip">{{ c }}</span>
+        </div>
+        <span v-else class="muted">—</span>
       </template>
     </Column>
     <Column style="width:76px" bodyStyle="text-align:right">
@@ -195,5 +196,29 @@ const skeletonRows = Array.from({ length: 8 });
   font-size: 0.8125rem;
   line-height: 1.2;
 }
+/* min-height, not fixed: rows with many categories wrap to a second line instead of overflowing */
 .tight-table :deep(.p-datatable-tbody td) { height: 28px; }
+
+/* Категории — компактни pill-chips во бренд-боја; се завиткуваат наместо да ја
+   разлеваат целата линија за возачи со многу категории (пр. B..M). Фиксна min-width
+   ги држи еднобуквените и двобуквените кодови порамнети. */
+.cat-chips {
+  display: flex; flex-wrap: wrap; gap: 3px 4px; align-items: center;
+  max-width: 300px; padding: 2px 0;
+}
+.cat-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 21px; height: 18px; padding: 0 5px;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1;
+  color: var(--color-brand-700);
+  background: color-mix(in srgb, var(--color-brand-500) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-brand-500) 24%, transparent);
+  border-radius: 5px;
+}
+html.app-dark .cat-chip {
+  color: var(--color-brand-300);
+  background: color-mix(in srgb, var(--color-brand-500) 22%, transparent);
+  border-color: color-mix(in srgb, var(--color-brand-400) 35%, transparent);
+}
 </style>
