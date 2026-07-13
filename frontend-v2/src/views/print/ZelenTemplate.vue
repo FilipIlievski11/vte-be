@@ -66,36 +66,31 @@ const DEFAULT_POS: AllPos = {
   page1: {
     // --- top of form ---
     printDate:      { x: 94.7,  y: 10.1,  w: 25.4, h: 6.3, size: 9, label: 'Датум на печатење' },
-    toMvr:          { x: 51.9,  y: 12.7,  w: 42.3, h: 8.5, label: 'ДО МВР - ОУР' },
-
+    toMvr:          { x: 51.9,  y: 13.7, size: 10,  w: 42.3, h: 8.5, label: 'ДО МВР - ОУР' },
     // --- (A) Plate + variant checkbox ---
-    plate:          { x: 92.6,  y: 72.0,  w: 108.0, h: 8.5, align: 'left', size: 12, label: '(A) Регистарска ознака' },
-    variantMark:    { x: 50.8,  y: 85.7,  w: 4.2,  h: 4.2, align: 'center', label: 'A/Б/В/Г ✕' },
-
+    plate:          { x: 92.6,  y: 73,  w: 108.0, h: 8.5, align: 'left', size: 12, label: '(A) Регистарска ознака' },
+    variantMark:    { x: 50.8,  y: 86.7, size: 10,  w: 4.2,  h: 4.2, align: 'center', label: 'A/Б/В/Г ✕' },
     // --- D.1–D.3 + 38 block ---
-    marka:          { x: 61.4,  y: 121.2, w: 118.5, h: 6.9, label: 'D.1 Марка' },
+    marka:          { x: 61.4,  y: 121.7, size: 10, w: 118.5, h: 6.9, label: 'D.1 Марка' },
     tip:            { x: 61.4,  y: 128.6, w: 118.5, h: 5.8, label: 'D.2 Тип/варијанта' },
-    komerc:         { x: 61.4,  y: 134.4, w: 118.5, h: 5.3, label: 'D.3 Комерц. ознака' },
+    komerc:         { x: 61.4,  y: 134.9, size: 10, w: 118.5, h: 5.3, label: 'D.3 Комерц. ознака' },
     // 38 Облик — legacy uses 9pt (Style 6) so the longer body-type strings fit.
     oblik:          { x: 73.0,  y: 141.3, w: 68.8, h: 5.3, size: 9, label: '38 Облик каросерија' },
 
     // --- C.2.1–C.2.4 owner ---
-    surname:        { x: 102.1, y: 150.8, w: 100.0, h: 6.4, label: 'C.2.1 Презиме' },
-    firstName:      { x: 61.4,  y: 158.2, w: 118.5, h: 6.4, label: 'C.2.2 Име' },
+    surname:        { x: 102.1, y: 152.1, size: 10, w: 100.0, h: 6.4, label: 'C.2.1 Презиме' },
+    firstName:      { x: 61.4,  y: 158.7, size: 10, w: 118.5, h: 6.4, label: 'C.2.2 Име' },
     address:        { x: 61.4,  y: 165.6, w: 118.5, h: 4.4, align: 'right', label: 'C.2.3 Адреса' },
-    community:      { x: 61.4,  y: 173.7, w: 118.5, h: 6.4, label: 'C.2.3 Општина' },
-    embg:           { x: 61.4,  y: 179.5, w: 118.5, h: 6.4, label: 'C.2.4 ЕМБГ' },
-
+    community:      { x: 61.4,  y: 172.7, size: 10, w: 118.5, h: 6.4, label: 'C.2.3 Општина' },
+    embg:           { x: 61.4,  y: 178.5, size: 10, w: 118.5, h: 6.4, label: 'C.2.4 ЕМБГ' },
     // --- A1 Регистрација важи до ---
-    validUntil:     { x: 86.8,  y: 187.9, w: 67.7, h: 6.3, label: 'A1 Регистрација важи до' },
-
+    validUntil:     { x: 86.8,  y: 187.4, size: 10, w: 67.7, h: 6.3, label: 'A1 Регистрација важи до' },
     // --- Кон барањето: proofs ---
     ownershipProof: { x: 69.8,  y: 202.3, w: 110.1, h: 6.4, label: 'Доказ за потеклото' },
-    paymentProof:   { x: 69.8,  y: 210.7, w: 110.1, h: 6.4, label: 'Потврда за платени давачки' },
-
+    paymentProof:   { x: 69.8,  y: 210.2, size: 10, w: 110.1, h: 6.4, label: 'Потврда за платени давачки' },
     // --- bottom (submitter + reference) ---
-    company:        { x: 19.0,  y: 236.7, w: 97.4, h: 4.4, label: 'Подносител (фирма)' },
-    referenceNo:    { x: 45.0,  y: 254.9, w: 61.9, h: 4.4, label: 'Број на барање' },
+    company:        { x: 19,  y: 235.2, size: 10, w: 97.4, h: 4.4, label: 'Подносител (фирма)' },
+    referenceNo:    { x: 45,  y: 253.4, size: 10, w: 61.9, h: 4.4, label: 'Број на барање' },
   },
   page2: {
     // ----- ТЕХНИЧКИ ПОДАТОЦИ panel (top of page 2) -----
@@ -105,16 +100,16 @@ const DEFAULT_POS: AllPos = {
     // Combined offset    = (97.4 mm, 16.4 mm) — already folded into the
     // values below; just read x/y in absolute page-2 mm.
 
-    engineType:        { x: 139.7, y: 16.4, w: 36.5, h: 4.4, label: '3.1.3 Тип на мотор' },
-    vin:               { x: 110.6, y: 22.1, w: 82.0, h: 4.4, label: 'E VIN' },
+    engineType:        { x: 170.7, y: 14.9, size: 10, w: 36.5, h: 4.4, label: '3.1.3 Тип на мотор' },
+    vin:               { x: 110.6, y: 22.6, size: 10, w: 82.0, h: 4.4, label: 'E VIN' },
     yearOfManufacture: { x: 111.2, y: 30.0, w: 82.0, h: 4.4, label: '5A Година на производство' },
     bodyType:          { x: 98.4,  y: 36.8, w: 70.9, h: 4.1, size: 9, label: '38 Облик каросерија' },
     color:             { x: 112.2, y: 44.3, w: 46.0, h: 4.4, label: 'R Боја' },
     engineNumber:      { x: 112.2, y: 51.0, w: 83.1, h: 4.4, label: 'P5 Идентификационен број на моторот' },
     powerKw:           { x: 112.2, y: 57.8, w: 82.6, h: 4.4, label: 'P2 Сила (kW)' },
-    cc:                { x: 112.2, y: 65.0, w: 80.4, h: 4.4, label: 'P.1 Зафатнина (cm³)' },
-    mass:              { x: 112.2, y: 72.3, w: 77.8, h: 4.4, label: 'G Маса' },
-    seats:             { x: 111.7, y: 78.9, w: 73.0, h: 4.4, label: 'S.1 Седишта' },
+    cc:                { x: 112.2, y: 64.5, size: 10, w: 80.4, h: 4.4, label: 'P.1 Зафатнина (cm³)' },
+    mass:              { x: 112.2, y: 71.8, size: 10, w: 77.8, h: 4.4, label: 'G Маса' },
+    seats:             { x: 111.7, y: 78.4, size: 10, w: 73.0, h: 4.4, label: 'S.1 Седишта' },
     standingSeats:     { x: 112.2, y: 84.9, w: 66.7, h: 4.4, label: 'S.2 Стоење' },
     category:          { x: 112.7, y: 90.9, w: 82.0, h: 4.4, label: 'J Категорија и вид' },
 

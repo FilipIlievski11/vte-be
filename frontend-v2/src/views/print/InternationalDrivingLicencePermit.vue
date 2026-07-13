@@ -21,17 +21,17 @@ const guides = ref(true);
 // size = the per-item font pt ('s'); the rotation baseline correction in tStyle uses it.
 const DEF: Record<string, { x: number; y: number; size?: number }> = {
   // Page 1 — validity / issuer / national licence number
-  validTill:   { x: 86.9,  y: 56.7, size: 11.3 },
-  companyName: { x: 95.2,  y: 81.8, size: 10.3 },
-  issuingCity: { x: 103.3, y: 55.3, size: 11.3 },
-  validFrom:   { x: 112.5, y: 56.7, size: 11.3 },
-  licenceNo:   { x: 120.0, y: 47.4, size: 11.3 },
+  validTill:   { x: 90.9,  y: 56.7, size: 11.3 },
+  companyName: { x: 99.2,  y: 81.8, size: 10.3 },
+  issuingCity: { x: 106.3, y: 56.3, size: 11.3 },
+  validFrom:   { x: 114.5, y: 56.7, size: 11.3 },
+  licenceNo:   { x: 122, y: 43.4, size: 11.3 },
   // Page 2 — driver identity
-  surname:     { x: 5.8,   y: 83.8, size: 9.0 },
-  firstName:   { x: 10.0,  y: 83.9, size: 9.0 },
-  birthPlace:  { x: 14.6,  y: 83.8, size: 9.0 },
-  dob:         { x: 18.6,  y: 83.9, size: 9.0 },
-  livingPlace: { x: 22.5,  y: 83.8, size: 9.0 },
+  surname:     { x: 7.8,   y: 83.8, size: 9 },
+  firstName:   { x: 12,  y: 83.9, size: 9 },
+  birthPlace:  { x: 16.6,  y: 83.8, size: 9 },
+  dob:         { x: 20.6,  y: 83.9, size: 9 },
+  livingPlace: { x: 24.5,  y: 83.8, size: 9 },
 };
 lay.setDefaults(DEF);
 
