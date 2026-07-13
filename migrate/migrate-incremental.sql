@@ -512,6 +512,28 @@ SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.InstallmentAgreement OFF;
 PRINT CONCAT('  -> ', @rows, ' new agreements.');
 
+-- Нов тип на плаќање во легаси (се случувало: siblings 18/23, 19/24) БЕЗ top-up значи
+-- дека append-от подолу (INNER JOIN dbo.PaymentType) тивко ги прескокнува сметките со
+-- тој тип, а watermark-от поминува преку нив — траен само-скриен јаз. Затоа: top-up ПРЕД
+-- document append-от.
+PRINT '=== PaymentType (top-up нови типови) ===';
+SELECT * INTO #ptNew FROM OPENQUERY(VTEZVV_LIVE,
+    'SELECT Id, Name, Fiskalna_kes, Fiskalna_karticka, Rati, Smetka, Faktura, Prefix, PayedAmount
+     FROM VTEZVV.dbo.PaymentTypes');
+SET IDENTITY_INSERT dbo.PaymentType ON;
+INSERT INTO dbo.PaymentType (Id, Name, IsCash, IsCard, IsInstallment, PrintsReceipt, PrintsInvoice, Prefix, PayedAmount, Active)
+SELECT s.Id, LEFT(LTRIM(RTRIM(ISNULL(s.Name, N''))), 100),
+       CONVERT(bit, COALESCE(s.Fiskalna_kes, 0)), CONVERT(bit, COALESCE(s.Fiskalna_karticka, 0)),
+       CONVERT(bit, COALESCE(s.Rati, 0)), CONVERT(bit, COALESCE(s.Smetka, 0)),
+       CONVERT(bit, COALESCE(s.Faktura, 0)), s.Prefix,
+       CONVERT(bit, COALESCE(s.PayedAmount, 1)), CONVERT(bit, 1)
+FROM #ptNew s
+WHERE NOT EXISTS (SELECT 1 FROM dbo.PaymentType x WHERE x.Id = s.Id);
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.PaymentType OFF;
+PRINT CONCAT('  -> ', @rows, ' new payment types.');
+DROP TABLE #ptNew;
+
 PRINT '=== PaymentDocument (append) ===';
 DECLARE @bDoc bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.PaymentDocument WHERE Id < @v2floor);
 SELECT p.Id, p.IdPaymentType, p.IdCustomerVehicleRelation, p.IdOperator, p.IdOrganization,
@@ -545,11 +567,14 @@ SET IDENTITY_INSERT dbo.PaymentDocument OFF;
 PRINT CONCAT('  -> ', @rows, ' new payment documents.');
 DROP TABLE #newDoc;
 
-PRINT '=== PaymentDocument (state-sync, 90d window) ===';
-SELECT p.Id, p.DatePay, p.Payed, p.Storno, p.Note, p.Active
-INTO #docState
-FROM VTEZVV_LIVE.VTEZVV.dbo.PaymentDocuments p
-WHERE p.Id < @v2floor AND p.DatePay >= DATEADD(day, -90, GETDATE());
+-- ЦЕЛОСЕН state-sync (не 90д): сторно во легаси МОЖЕ да таргетира и постара сметка —
+-- маркерот „Сторнирана во сметка" се запишува во Note на оригиналот со СТАРИОТ DatePay,
+-- па 90-дневен прозорец никогаш не би го пренел и извештаите би ја броеле сметката што
+-- легаси ја исклучува. Единечен table-pull преку OPENQUERY (~330k тесни редови) е евтин.
+PRINT '=== PaymentDocument (state-sync, full) ===';
+SELECT * INTO #docState FROM OPENQUERY(VTEZVV_LIVE,
+    'SELECT Id, DatePay, Payed, Storno, Note, Active
+     FROM VTEZVV.dbo.PaymentDocuments WHERE Id < 10000000');
 
 UPDATE d SET d.IssueDate = s.DatePay, d.Paid = s.Payed, d.Stornoed = s.Storno,
              d.Note = s.Note, d.Active = s.Active, d.ModifiedAt = SYSUTCDATETIME()
@@ -589,6 +614,86 @@ SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.PaymentDocumentLine OFF;
 PRINT CONCAT('  -> ', @rows, ' new payment lines.');
 DROP TABLE #newLine;
+
+-- Линиите се менуваат по креирање (сторно на поединечна ставка, корекција на цена,
+-- authorised поправки) — append-only ги пропушта. Огледало на doc state-sync-от:
+-- 90-дневен прозорец по документ; OPENQUERY за join-от да се изврши remotely.
+PRINT '=== PaymentDocumentLine (state-sync + gap-insert, 90d window) ===';
+SELECT * INTO #lineState FROM OPENQUERY(VTEZVV_LIVE,
+    'SELECT l.Id, l.IdPaymentDocuments, l.IdPriceCatalog, l.Price, l.DDV, l.Discount,
+            l.Note, l.PrePayed, l.NotePrePayed, l.Active
+     FROM VTEZVV.dbo.PaymentDocumentsDetails l
+     INNER JOIN VTEZVV.dbo.PaymentDocuments p ON p.Id = l.IdPaymentDocuments
+     WHERE p.DatePay >= DATEADD(day, -90, GETDATE())');
+
+UPDATE t SET
+    t.PriceCatalogId = CASE WHEN EXISTS (SELECT 1 FROM dbo.PriceCatalog pc WHERE pc.Id = s.IdPriceCatalog)
+                            THEN s.IdPriceCatalog ELSE 999999 END,
+    t.UnitPrice  = CONVERT(decimal(18,4), s.Price),
+    t.VatPercent = CONVERT(float, s.DDV),
+    t.Discount   = CONVERT(float, COALESCE(s.Discount, 0)),
+    t.PrePaid    = CONVERT(bit, COALESCE(s.PrePayed, 0)),
+    t.Active     = CONVERT(bit, COALESCE(s.Active, 1))
+FROM dbo.PaymentDocumentLine t
+INNER JOIN #lineState s ON s.Id = t.Id
+WHERE t.Id < @v2floor
+  AND (t.UnitPrice <> CONVERT(decimal(18,4), s.Price)
+       OR ISNULL(t.VatPercent, -1) <> ISNULL(CONVERT(float, s.DDV), -1)
+       OR ISNULL(t.Discount, 0) <> CONVERT(float, COALESCE(s.Discount, 0))
+       OR t.PrePaid <> CONVERT(bit, COALESCE(s.PrePayed, 0))
+       OR t.Active <> CONVERT(bit, COALESCE(s.Active, 1))
+       OR (t.PriceCatalogId <> s.IdPriceCatalog
+           AND EXISTS (SELECT 1 FROM dbo.PriceCatalog pc WHERE pc.Id = s.IdPriceCatalog)));
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' payment lines state-synced.');
+
+-- Линии додадени на постар документ добиваат Id ПОД watermark-от — append-от ги прескокнува.
+SET IDENTITY_INSERT dbo.PaymentDocumentLine ON;
+INSERT INTO dbo.PaymentDocumentLine
+    (Id, CompanyId, PaymentDocumentId, PriceCatalogId, UnitPrice, VatPercent,
+     Discount, Quantity, Note, PrePaid, PrePaidNote, CustomerDebtId, Active)
+SELECT
+    s.Id, CONVERT(tinyint, 4), s.IdPaymentDocuments,
+    CASE WHEN EXISTS (SELECT 1 FROM dbo.PriceCatalog pc WHERE pc.Id = s.IdPriceCatalog)
+         THEN s.IdPriceCatalog ELSE 999999 END,
+    CONVERT(decimal(18,4), s.Price), CONVERT(float, s.DDV),
+    CONVERT(float, COALESCE(s.Discount, 0)), 1,
+    LEFT(NULLIF(LTRIM(RTRIM(s.Note)), N''), 300),
+    CONVERT(bit, COALESCE(s.PrePayed, 0)), s.NotePrePayed, NULL,
+    CONVERT(bit, COALESCE(s.Active, 1))
+FROM #lineState s
+INNER JOIN dbo.PaymentDocument pd ON pd.Id = s.IdPaymentDocuments
+WHERE s.Id < @v2floor
+  AND NOT EXISTS (SELECT 1 FROM dbo.PaymentDocumentLine x WHERE x.Id = s.Id);
+SET @rows = @@ROWCOUNT;
+SET IDENTITY_INSERT dbo.PaymentDocumentLine OFF;
+PRINT CONCAT('  -> ', @rows, ' payment lines gap-inserted.');
+DROP TABLE #lineState;
+
+-- Видот на возилото за наплата (VehicleCategoryForPayments) се менува при прекласификација
+-- во легаси — гап-филлот за возила не ги фаќа измените, а ПРЕГЛЕД ЗА НАПЛАТА групира по него.
+PRINT '=== Vehicle (payment-kind refresh) ===';
+SELECT * INTO #vehKind FROM OPENQUERY(VTEZVV_LIVE,
+    'SELECT Id, IdVehicleCategoryForPayments AS KindId FROM VTEZVV.dbo.Vehicles');
+UPDATE v SET v.PaymentCategoryId = s.EffKind
+FROM dbo.Vehicle v
+INNER JOIN (SELECT sk.Id, CASE WHEN k.Id IS NOT NULL THEN sk.KindId END AS EffKind
+            FROM #vehKind sk
+            LEFT JOIN dbo.VehiclePaymentCategory k ON k.Id = sk.KindId) s ON s.Id = v.Id
+WHERE v.Id < @v2floor
+  AND ISNULL(CAST(v.PaymentCategoryId AS int), -1) <> ISNULL(CAST(s.EffKind AS int), -1);
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' vehicle payment-kinds refreshed.');
+DROP TABLE #vehKind;
+
+-- PayedAmount (наплатен/проверен по тип на плаќање) — мал регистар, целосен refresh.
+PRINT '=== PaymentType (PayedAmount refresh) ===';
+SELECT * INTO #ptFlags FROM OPENQUERY(VTEZVV_LIVE,
+    'SELECT Id, PayedAmount FROM VTEZVV.dbo.PaymentTypes');
+UPDATE pt SET pt.PayedAmount = CONVERT(bit, COALESCE(s.PayedAmount, 1))
+FROM dbo.PaymentType pt
+INNER JOIN #ptFlags s ON s.Id = pt.Id
+WHERE pt.PayedAmount <> CONVERT(bit, COALESCE(s.PayedAmount, 1));
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' payment types PayedAmount refreshed.');
+DROP TABLE #ptFlags;
 
 PRINT '=== InstallmentSchedule (append + recent payments) ===';
 DECLARE @bSched bigint = (SELECT ISNULL(MAX(Id),0) FROM dbo.InstallmentSchedule WHERE Id < @v2floor);

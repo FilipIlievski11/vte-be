@@ -33,5 +33,10 @@ public class PaymentType
     /// <summary>DocumentNumber prefix (e.g. "F" for Faktura). Legacy: Prefix.</summary>
     public string? Prefix { get; set; }
 
+    /// <summary>Пари реално наплатени на шалтер (готово/картичка/договор/фактура) — false за
+    /// авансно/вирмански/поништување/книжно. Легаси: PayedAmount; ги дели „наплатен" од
+    /// „проверен" износ во ПРЕГЛЕД ЗА НАПЛАТА (ReportByCategoryForPayment).</summary>
+    public bool PayedAmount { get; set; } = true;
+
     public bool Active { get; set; } = true;
 }

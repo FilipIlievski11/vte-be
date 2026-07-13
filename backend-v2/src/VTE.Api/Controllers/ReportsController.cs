@@ -33,9 +33,21 @@ public class ReportsController : ControllerBase
     public record ReportDto(int Year, int Month, string From, string To,
                             string CompanyName, decimal Total, IReadOnlyList<ReportRow> Rows);
 
-    private async Task<ReportDto?> BuildAsync(int year, int month, int categoryGroupId, CancellationToken ct)
+    /// <summary>Parse "1" / "1086,1063" into group ids. Some institutions are billed
+    /// through more than one payment category (e.g. Републички совет: основен +
+    /// од јавни патишта), so a report can span several group ids.
+    /// List (not array) on purpose: on .NET 10 `array.Contains` binds to the span-based
+    /// MemoryExtensions overload, which EF cannot translate/evaluate.</summary>
+    private static List<int> ParseGroupIds(string? categoryGroupIds) =>
+        (categoryGroupIds ?? "1").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var v) ? v : -1)
+            .Where(v => v > 0)
+            .Distinct()
+            .ToList();
+
+    private async Task<ReportDto?> BuildAsync(int year, int month, List<int> groupIds, CancellationToken ct)
     {
-        if (year is < 2000 or > 2100 || month is < 1 or > 12) return null;
+        if (year is < 2000 or > 2100 || month is < 1 or > 12 || groupIds.Count == 0) return null;
         var fromDate = new DateTime(year, month, 1);
         var toDate = fromDate.AddMonths(1);
 
@@ -46,13 +58,18 @@ public class ReportsController : ControllerBase
             join t in _db.PaymentTypes.AsNoTracking() on d.PaymentTypeId equals t.Id
             join l in _db.PaymentDocumentLines.AsNoTracking() on d.Id equals l.PaymentDocumentId
             join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
-            where d.Active && !d.Stornoed
+            // Без Stornoed-филтер: легаси SP-то (ReportByCategoryForPayment) не филтрира
+            // Storno — сторнирањата ги вадат Note-маркерите. Верифицирано против живата
+            // база јуни 2026 (док. 324606: Storno=1, Active=1 → легаси го брои).
+            // Исклучок: в2-нативно сторно (LegacyId==null) нема легаси маркери — директно.
+            where d.Active
+                  && (!d.Stornoed || d.LegacyId != null)
                   && d.IssueDate >= fromDate && d.IssueDate < toDate
                   && (d.Note == null || (!d.Note.StartsWith("Автоматски генерирана")
                                          && !d.Note.StartsWith("Сторнирана во сметка")))
                   && (t.Prefix == null || t.Prefix.Trim() != "пп")
                   && l.Active && !l.PrePaid
-                  && pc.PaymentCategoryGroupId == categoryGroupId
+                  && pc.PaymentCategoryGroupId != null && groupIds.Contains(pc.PaymentCategoryGroupId.Value)
             select new
             {
                 d.Id,
@@ -112,25 +129,32 @@ public class ReportsController : ControllerBase
             companyName, rows.Sum(r => r.Amount), rows);
     }
 
-    /// <summary>Report data as JSON — backs the Извештаи screen.</summary>
+    /// <summary>Report data as JSON — backs the Извештаи screen.
+    /// categoryGroupIds: comma-separated PaymentCategoryGroup ids (default 1 = Јавни патишта).</summary>
     [HttpGet("public-roads")]
     public async Task<ActionResult<ReportDto>> PublicRoads(
         [FromQuery] int year, [FromQuery] int month,
-        [FromQuery] int categoryGroupId = 1, CancellationToken ct = default)
+        [FromQuery] string? categoryGroupIds = null, CancellationToken ct = default)
     {
-        var dto = await BuildAsync(year, month, categoryGroupId, ct);
+        var dto = await BuildAsync(year, month, ParseGroupIds(categoryGroupIds), ct);
         return dto == null ? BadRequest(new { error = "Невалиден период." }) : Ok(dto);
     }
 
     /// <summary>The same report as a downloadable .xlsx, replicating the legacy layout
-    /// (title block, columns, ВКУПНО row, М.П. + signature footer).</summary>
+    /// (title block, columns, ВКУПНО row, М.П. + signature footer). `title` is the
+    /// document heading; the default is the legacy Јавни-патишта heading.</summary>
     [HttpGet("public-roads/xlsx")]
     public async Task<IActionResult> PublicRoadsXlsx(
         [FromQuery] int year, [FromQuery] int month,
-        [FromQuery] int categoryGroupId = 1, CancellationToken ct = default)
+        [FromQuery] string? categoryGroupIds = null,
+        [FromQuery] string? title = null, CancellationToken ct = default)
     {
-        var dto = await BuildAsync(year, month, categoryGroupId, ct);
+        var dto = await BuildAsync(year, month, ParseGroupIds(categoryGroupIds), ct);
         if (dto == null) return BadRequest(new { error = "Невалиден период." });
+
+        var docTitle = string.IsNullOrWhiteSpace(title)
+            ? "Детален месечен извештај по ставки од регистрација на возила"
+            : title.Trim();
 
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("Извештај");
@@ -139,7 +163,7 @@ public class ReportsController : ControllerBase
         ws.Range(1, 1, 1, 6).Merge().Style
             .Font.SetBold().Font.SetFontSize(12)
             .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
-        ws.Cell(3, 1).Value = "Детален месечен извештај по ставки од регистрација на возила";
+        ws.Cell(3, 1).Value = docTitle;
         ws.Range(3, 1, 3, 6).Merge().Style
             .Font.SetBold()
             .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
@@ -242,7 +266,10 @@ public class ReportsController : ControllerBase
             from g in gj.DefaultIfEmpty()
             join ci in _db.CalculationItems.AsNoTracking() on g.CalculationItemId equals ci.Id into cij
             from ci in cij.DefaultIfEmpty()
-            where d.Active && !d.Stornoed
+            // Без Stornoed-филтер — иста база како месечниот/прегледот (легаси паритет).
+            // в2-нативно сторно (LegacyId==null) нема легаси маркери — исклучи директно.
+            where d.Active
+                  && (!d.Stornoed || d.LegacyId != null)
                   && d.IssueDate >= fromDate && d.IssueDate < toDate
                   && (d.Note == null || (!d.Note.StartsWith("Автоматски генерирана")
                                          && !d.Note.StartsWith("Сторнирана во сметка")))
@@ -358,5 +385,166 @@ public class ReportsController : ControllerBase
         var fname = dto.From == dto.To ? $"Распределба {dto.From}.xlsx" : $"Распределба {dto.From}-{dto.To}.xlsx";
         return File(ms.ToArray(),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fname);
+    }
+
+    // ========================================================================
+    // ПРЕГЛЕД ЗА НАПЛАТА (легаси uxReportByPaymentCategory pivot): за период и
+    // институција — број на возила и НАПЛАТЕН износ, групирано по вид на возило
+    // (VehiclePaymentCategory). „Наплатен" = типови на плаќање со PayedAmount
+    // (готово/картичка/договор/фактура); авансно/вирмански/книжно се „проверен"
+    // износ и не влегуваат. Легаси го заокружува секој ред на 0.1 ден
+    // (Price − Discount%), па и ние. Останатите филтри се исти со монечниот
+    // извештај за двата да се совпаѓаат со легаси до денар.
+    // ========================================================================
+    public record KindRow(string Kind, int Vehicles, decimal Amount);
+    public record CollectionPreviewDto(string From, string To, string CompanyName, string CategoryName,
+                                       int TotalVehicles, decimal TotalAmount, IReadOnlyList<KindRow> Rows);
+
+    private async Task<CollectionPreviewDto?> BuildCollectionPreviewAsync(
+        DateTime from, DateTime to, List<int> groupIds, CancellationToken ct)
+    {
+        var fromDate = from.Date;
+        var toDate = to.Date.AddDays(1);      // inclusive of the 'to' day (legacy: EndDate.AddDays(1))
+        if (toDate <= fromDate || groupIds.Count == 0) return null;
+
+        var lines = await (
+            from d in _db.PaymentDocuments.AsNoTracking()
+            join t in _db.PaymentTypes.AsNoTracking() on d.PaymentTypeId equals t.Id
+            join l in _db.PaymentDocumentLines.AsNoTracking() on d.Id equals l.PaymentDocumentId
+            join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
+            // Легаси SP-то НЕ филтрира Storno — сторнирањата се исклучуваат преку
+            // Note-маркерите; сторниран-но-активен документ сè уште се брои (верифицирано
+            // против живата база: док. 324606, јуни 2026).
+            // в2-нативно сторно (LegacyId==null) нема легаси маркери — исклучи директно.
+            where d.Active
+                  && (!d.Stornoed || d.LegacyId != null)
+                  && d.IssueDate >= fromDate && d.IssueDate < toDate
+                  && (d.Note == null || (!d.Note.StartsWith("Автоматски генерирана")
+                                         && !d.Note.StartsWith("Сторнирана во сметка")))
+                  && (t.Prefix == null || t.Prefix.Trim() != "пп")
+                  && t.PayedAmount
+                  && l.Active && !l.PrePaid
+                  && pc.PaymentCategoryGroupId != null && groupIds.Contains(pc.PaymentCategoryGroupId.Value)
+            select new { d.CustomerVehicleRelationId, l.UnitPrice, l.Quantity, l.Discount }).ToListAsync(ct);
+
+        // relation → vehicle → вид на возило за наплата
+        var relIds = lines.Select(x => x.CustomerVehicleRelationId).Distinct().ToList();
+        var relVeh = await _db.ClientVehicleRelations.AsNoTracking()
+            .Where(r => relIds.Contains(r.Id))
+            .Select(r => new { r.Id, r.VehicleId })
+            .ToDictionaryAsync(r => r.Id, r => r.VehicleId, ct);
+        var vehIds = relVeh.Values.Where(v => v.HasValue).Select(v => v!.Value).Distinct().ToList();
+        var vehKind = await _db.Vehicles.AsNoTracking()
+            .Where(v => vehIds.Contains(v.Id))
+            .Select(v => new { v.Id, v.PaymentCategoryId })
+            .ToDictionaryAsync(v => v.Id, v => v.PaymentCategoryId, ct);
+        var kindNames = await _db.VehiclePaymentCategories.AsNoTracking()
+            .ToDictionaryAsync(k => k.Id, k => k.Name, ct);
+
+        var rows = lines
+            .Select(x =>
+            {
+                long? vid = relVeh.TryGetValue(x.CustomerVehicleRelationId, out var vv) ? vv : null;
+                var kind = "—";
+                if (vid.HasValue && vehKind.TryGetValue(vid.Value, out var kId) && kId.HasValue
+                    && kindNames.TryGetValue(kId.Value, out var kName))
+                    kind = kName;
+                // легаси: Math.Round(Price − Price*Discount/100, 1) по ред
+                var amount = Math.Round(x.UnitPrice * x.Quantity * (1 - (decimal)x.Discount / 100m), 1);
+                return new { kind, vid, amount };
+            })
+            .GroupBy(x => x.kind)
+            .Select(g => new KindRow(
+                g.Key,
+                g.Where(x => x.vid.HasValue).Select(x => x.vid!.Value).Distinct().Count(),
+                g.Sum(x => x.amount)))
+            .OrderBy(r => r.Kind)
+            .ToList();
+
+        var companyName = await _db.Companies.AsNoTracking()
+            .Where(c => c.Id == (_tenant.CompanyId ?? 4))
+            .Select(c => c.Name).FirstOrDefaultAsync(ct) ?? "";
+        var categoryName = await _db.PaymentCategoryGroups.AsNoTracking()
+            .Where(g => g.Id == groupIds[0])
+            .Select(g => g.Name).FirstOrDefaultAsync(ct) ?? "";
+
+        return new CollectionPreviewDto(
+            fromDate.ToString("dd.MM.yyyy"), toDate.AddDays(-1).ToString("dd.MM.yyyy"),
+            companyName, categoryName,
+            rows.Sum(r => r.Vehicles), rows.Sum(r => r.Amount), rows);
+    }
+
+    [HttpGet("collection-preview")]
+    public async Task<ActionResult<CollectionPreviewDto>> CollectionPreview(
+        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] string? categoryGroupIds = null, CancellationToken ct = default)
+    {
+        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), ct);
+        return dto == null ? BadRequest(new { error = "Невалиден период." }) : Ok(dto);
+    }
+
+    [HttpGet("collection-preview/xlsx")]
+    public async Task<IActionResult> CollectionPreviewXlsx(
+        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] string? categoryGroupIds = null,
+        [FromQuery] string? title = null, CancellationToken ct = default)
+    {
+        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), ct);
+        if (dto == null) return BadRequest(new { error = "Невалиден период." });
+        var catLabel = string.IsNullOrWhiteSpace(title) ? dto.CategoryName : title.Trim();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Преглед");
+
+        ws.Cell(1, 1).Value = dto.CompanyName;
+        ws.Range(1, 1, 1, 3).Merge().Style.Font.SetBold().Font.SetFontSize(12)
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+        ws.Cell(3, 1).Value = $"ПРЕГЛЕД ЗА НАПЛАТА ЗА: {catLabel}";
+        ws.Range(3, 1, 3, 3).Merge().Style.Font.SetBold()
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+        ws.Cell(4, 1).Value = $"Датум од: {dto.From}  до: {dto.To}";
+        ws.Range(4, 1, 4, 3).Merge().Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+
+        string[] heads = ["Вид на возила", "Бр. на возила", "Наплатен износ"];
+        const int headRow = 6;
+        for (var i = 0; i < heads.Length; i++)
+        {
+            var c = ws.Cell(headRow, i + 1);
+            c.Value = heads[i];
+            c.Style.Font.SetBold()
+                .Border.SetOutsideBorder(XLBorderStyleValues.Thin)
+                .Fill.SetBackgroundColor(XLColor.FromArgb(0xEF, 0xEF, 0xEF));
+        }
+
+        var r = headRow + 1;
+        foreach (var row in dto.Rows)
+        {
+            ws.Cell(r, 1).Value = row.Kind;
+            ws.Cell(r, 2).Value = row.Vehicles;
+            ws.Cell(r, 3).Value = row.Amount;
+            ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+        ws.Cell(r, 1).Value = "ВКУПНО :";
+        ws.Cell(r, 1).Style.Font.SetBold();
+        ws.Cell(r, 2).Value = dto.TotalVehicles;
+        ws.Cell(r, 2).Style.Font.SetBold();
+        ws.Cell(r, 3).Value = dto.TotalAmount;
+        ws.Cell(r, 3).Style.Font.SetBold().NumberFormat.SetFormat("#,##0.00");
+        ws.Range(r, 1, r, 3).Style.Border.SetTopBorder(XLBorderStyleValues.Medium);
+
+        ws.Cell(r + 3, 1).Value = "М.П.";
+        ws.Cell(r + 4, 3).Value = "____________________________";
+        ws.Cell(r + 5, 3).Value = "потпис на одговорно лице";
+
+        ws.Column(1).Width = 40;
+        ws.Column(2).Width = 14;
+        ws.Column(3).Width = 18;
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return File(ms.ToArray(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"Преглед за наплата {catLabel} {dto.From}-{dto.To}.xlsx");
     }
 }

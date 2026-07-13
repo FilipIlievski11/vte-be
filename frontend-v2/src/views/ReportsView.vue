@@ -12,11 +12,12 @@ import { useToast } from 'primevue/usetoast';
 const { t } = useI18n();
 const toast = useToast();
 
-type Mode = 'distribution' | 'monthly';
+type Mode = 'distribution' | 'monthly' | 'preview';
 const mode = ref<Mode>('distribution');
 const modeOptions = computed(() => [
   { value: 'distribution', label: t('reports.mode.distribution') },
   { value: 'monthly', label: t('reports.mode.monthly') },
+  { value: 'preview', label: t('reports.mode.preview') },
 ]);
 
 function fmtMoney(v: number): string {
@@ -81,7 +82,7 @@ async function downloadDistributionXlsx() {
   } finally { exporting.value = false; }
 }
 
-// ===================== Месечно — Јавни патишта =====================
+// ===================== Месечен извештај по категорија =====================
 interface ReportRow { documentId: number; datePay: string; payer: string; vehicleCategory: string | null; plate: string | null; amount: number; }
 interface ReportDto { year: number; month: number; from: string; to: string; companyName: string; total: number; rows: ReportRow[]; }
 const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -91,23 +92,127 @@ const monthOptions = computed(() =>
   Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: t(`reports.months.${i + 1}`) })));
 const report = ref<ReportDto | null>(null);
 
+// Секоја институција може да наплаќа низ повеќе категории на наплата (ids од
+// PaymentCategoryGroup; старофирмските id-а се вклучени за извештаи на стари месеци).
+// Реп. совет = основен (1063/63) + „од јавни патишта" (1086/86) — иста уплатна сметка.
+interface MonthlyCat { key: string; ids: string; label: string }
+const monthlyCats = computed<MonthlyCat[]>(() => [
+  { key: 'roads',       ids: '1',                label: t('reports.cats.roads') },
+  { key: 'budget',      ids: '9',                label: t('reports.cats.budget') },
+  { key: 'redcross',    ids: '7',                label: t('reports.cats.redcross') },
+  { key: 'communal',    ids: '1002,2',           label: t('reports.cats.communal') },
+  { key: 'environment', ids: '8',                label: t('reports.cats.environment') },
+  { key: 'council',     ids: '1086,1063,86,63',  label: t('reports.cats.council') },
+]);
+const monthlyCatKey = ref('roads');
+const selectedCat = computed(() => monthlyCats.value.find(c => c.key === monthlyCatKey.value) ?? monthlyCats.value[0]);
+// Јавни патишта го задржува точниот легаси наслов (паритет со стариот XLS образец);
+// останатите добиваат генеричен наслов со името на категоријата. На екранот насловот
+// ја следи ВЧИТАНАТА категорија, не живата селекција.
+function monthlyTitleFor(cat: MonthlyCat): string {
+  return cat.key === 'roads' ? t('reports.docTitle') : t('reports.docTitleGeneric', { name: cat.label });
+}
+const monthlyDocTitle = computed(() => monthlyTitleFor(monthlyLoadedCat.value ?? selectedCat.value));
+
+// Ист stale-guard + „вчитана категорија" како кај Прегледот — иста трка постои и тука.
+const monthlyLoadedCat = ref<MonthlyCat | null>(null);
+let monthlyReqSeq = 0;
 async function loadMonthly() {
+  const cat = selectedCat.value;
+  const seq = ++monthlyReqSeq;
   loading.value = true;
   try {
-    const { data } = await api.get<ReportDto>('/reports/public-roads', { params: { year: year.value, month: month.value } });
+    const { data } = await api.get<ReportDto>('/reports/public-roads', {
+      params: { year: year.value, month: month.value, categoryGroupIds: cat.ids },
+    });
+    if (seq !== monthlyReqSeq) return;
     report.value = data;
+    monthlyLoadedCat.value = cat;
   } catch (e: any) {
     toast.add({ severity: 'error', summary: t('reports.loadFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
-  } finally { loading.value = false; }
+  } finally { if (seq === monthlyReqSeq) loading.value = false; }
 }
 async function downloadMonthlyXlsx() {
   exporting.value = true;
   try {
-    const res = await api.get('/reports/public-roads/xlsx', { params: { year: year.value, month: month.value }, responseType: 'blob' });
+    // xlsx-от секогаш повлекува свежи податоци за живата селекција — насловот оди во пар.
+    const res = await api.get('/reports/public-roads/xlsx', {
+      params: {
+        year: year.value, month: month.value,
+        categoryGroupIds: selectedCat.value.ids, title: monthlyTitleFor(selectedCat.value),
+      },
+      responseType: 'blob',
+    });
     const url = URL.createObjectURL(res.data as Blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Извештај ${t(`reports.months.${month.value}`)} ${year.value}.xlsx`;
+    const catPart = monthlyCatKey.value === 'roads' ? '' : `${selectedCat.value.label} `;
+    a.download = `Извештај ${catPart}${t(`reports.months.${month.value}`)} ${year.value}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('reports.exportFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { exporting.value = false; }
+}
+
+// ===================== Преглед за наплата (по вид на возило) =====================
+// Легаси uxReportByPaymentCategory pivot: за период + институција — број на возила
+// и наплатен износ по вид на возило. Реп. совет е ДВА одделни извештаи (основен и
+// „од јавни патишта" — 1% од патниот надомест), како во легаси.
+interface KindRow { kind: string; vehicles: number; amount: number }
+interface CollectionPreviewDto {
+  from: string; to: string; companyName: string; categoryName: string;
+  totalVehicles: number; totalAmount: number; rows: KindRow[];
+}
+const prevFrom = ref<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
+const prevTo = ref<Date>(new Date(today));
+const preview = ref<CollectionPreviewDto | null>(null);
+const previewCats = computed<MonthlyCat[]>(() => [
+  { key: 'roads',        ids: '1',         label: t('reports.cats.roads') },
+  { key: 'budget',       ids: '9',         label: t('reports.cats.budget') },
+  { key: 'redcross',     ids: '7',         label: t('reports.cats.redcross') },
+  { key: 'communal',     ids: '1002,2',    label: t('reports.cats.communal') },
+  { key: 'environment',  ids: '8',         label: t('reports.cats.environment') },
+  { key: 'council',      ids: '1063,63',   label: t('reports.cats.council') },
+  { key: 'councilRoads', ids: '1086,86',   label: t('reports.cats.councilRoads') },
+]);
+const previewCatKey = ref('redcross');
+const selectedPreviewCat = computed(() =>
+  previewCats.value.find(c => c.key === previewCatKey.value) ?? previewCats.value[0]);
+
+// Насловот на листот се врзува за категоријата чии податоци се ВЧИТАНИ (не за живата
+// селекција) — паѓање/задоцнет одговор инаку остава туѓ наслов врз туѓи бројки на печат.
+const previewLoadedCat = ref<MonthlyCat | null>(null);
+let previewReqSeq = 0;
+async function loadPreview() {
+  const cat = selectedPreviewCat.value;
+  const seq = ++previewReqSeq;
+  loading.value = true;
+  try {
+    const { data } = await api.get<CollectionPreviewDto>('/reports/collection-preview', {
+      params: { from: isoDay(prevFrom.value), to: isoDay(prevTo.value), categoryGroupIds: cat.ids },
+    });
+    if (seq !== previewReqSeq) return;   // задоцнет одговор од претходна селекција — отфрли
+    preview.value = data;
+    previewLoadedCat.value = cat;
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('reports.loadFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { if (seq === previewReqSeq) loading.value = false; }
+}
+async function downloadPreviewXlsx() {
+  exporting.value = true;
+  try {
+    const res = await api.get('/reports/collection-preview/xlsx', {
+      params: {
+        from: isoDay(prevFrom.value), to: isoDay(prevTo.value),
+        categoryGroupIds: selectedPreviewCat.value.ids, title: selectedPreviewCat.value.label,
+      },
+      responseType: 'blob',
+    });
+    const url = URL.createObjectURL(res.data as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Преглед за наплата ${selectedPreviewCat.value.label} ${isoDay(prevFrom.value)}–${isoDay(prevTo.value)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   } catch (e: any) {
@@ -116,8 +221,16 @@ async function downloadMonthlyXlsx() {
 }
 
 // ===================== shared =====================
-function load() { mode.value === 'distribution' ? loadDistribution() : loadMonthly(); }
-function downloadXlsx() { mode.value === 'distribution' ? downloadDistributionXlsx() : downloadMonthlyXlsx(); }
+function load() {
+  if (mode.value === 'distribution') loadDistribution();
+  else if (mode.value === 'monthly') loadMonthly();
+  else loadPreview();
+}
+function downloadXlsx() {
+  if (mode.value === 'distribution') downloadDistributionXlsx();
+  else if (mode.value === 'monthly') downloadMonthlyXlsx();
+  else downloadPreviewXlsx();
+}
 function switchMode(m: Mode) { if (m === mode.value) return; mode.value = m; load(); }
 
 // Printing: toggle a body-level class so a GLOBAL print rule can hide the app chrome.
@@ -134,39 +247,56 @@ onUnmounted(() => {
 });
 
 const hasContent = computed(() =>
-  mode.value === 'distribution' ? !!distribution.value : !!report.value?.rows?.length);
+  mode.value === 'distribution' ? !!distribution.value
+  : mode.value === 'monthly' ? !!report.value?.rows?.length
+  : !!preview.value?.rows?.length);
 </script>
 
 <template>
   <div class="page reports-page">
+    <!-- Стабилни две редици: горе наслов + табови, долу контроли + акции. Менувањето
+         режим менува само содржина ВНАТРЕ во долната редица — ништо не скока. -->
     <div class="toolbar no-print">
-      <div class="tb-title">
-        <div class="tb-icon"><i class="pi pi-chart-bar" /></div>
-        <div>
-          <h1>{{ t('reports.title') }}</h1>
-          <p class="tb-sub">{{ t('reports.subtitle') }}</p>
+      <div class="tb-row">
+        <div class="tb-title">
+          <div class="tb-icon"><i class="pi pi-chart-bar" /></div>
+          <div>
+            <h1>{{ t('reports.title') }}</h1>
+            <p class="tb-sub">{{ t('reports.subtitle') }}</p>
+          </div>
         </div>
-      </div>
-
-      <div class="tb-controls">
         <SelectButton :modelValue="mode" :options="modeOptions" optionLabel="label" optionValue="value"
                       :allowEmpty="false" size="small" @update:modelValue="switchMode" />
+      </div>
 
+      <div class="tb-row">
         <div v-if="mode === 'distribution'" class="period-pick">
           <DatePicker v-model="distFrom" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
           <span class="dash">–</span>
           <DatePicker v-model="distTo" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
           <Button :label="t('reports.show')" icon="pi pi-search" size="small" :loading="loading" @click="loadDistribution" />
         </div>
-        <div v-else class="period-pick">
+        <div v-else-if="mode === 'monthly'" class="period-pick">
+          <Select v-model="monthlyCatKey" :options="monthlyCats" optionLabel="label" optionValue="key"
+                  size="small" class="ctl-cat" @change="loadMonthly" />
           <Select v-model="month" :options="monthOptions" optionLabel="label" optionValue="value" size="small" class="ctl-month" />
           <InputNumber v-model="year" :useGrouping="false" :min="2000" :max="2100" size="small" class="ctl-year" inputClass="year-input" />
           <Button :label="t('reports.show')" icon="pi pi-search" size="small" :loading="loading" @click="loadMonthly" />
         </div>
+        <div v-else class="period-pick">
+          <Select v-model="previewCatKey" :options="previewCats" optionLabel="label" optionValue="key"
+                  size="small" class="ctl-cat" @change="loadPreview" />
+          <DatePicker v-model="prevFrom" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
+          <span class="dash">–</span>
+          <DatePicker v-model="prevTo" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
+          <Button :label="t('reports.show')" icon="pi pi-search" size="small" :loading="loading" @click="loadPreview" />
+        </div>
 
-        <div v-if="hasContent" class="tb-actions">
-          <Button :label="t('reports.print')" icon="pi pi-print" size="small" severity="secondary" outlined @click="printReport" />
-          <Button :label="t('reports.excel')" icon="pi pi-file-excel" size="small" severity="success" outlined :loading="exporting" @click="downloadXlsx" />
+        <div class="tb-actions">
+          <Button :label="t('reports.print')" icon="pi pi-print" size="small" severity="secondary" outlined
+                  :disabled="!hasContent" @click="printReport" />
+          <Button :label="t('reports.excel')" icon="pi pi-file-excel" size="small" severity="success" outlined
+                  :loading="exporting" :disabled="!hasContent" @click="downloadXlsx" />
         </div>
       </div>
     </div>
@@ -240,7 +370,7 @@ const hasContent = computed(() =>
     <div v-else-if="mode === 'monthly' && report" class="report-sheet">
       <div class="report-head">
         <div class="rh-company">{{ report.companyName }}</div>
-        <div class="rh-title">{{ t('reports.docTitle') }}</div>
+        <div class="rh-title">{{ monthlyDocTitle }}</div>
         <div class="rh-period">{{ t('reports.period', { from: report.from, to: report.to }) }}</div>
       </div>
 
@@ -283,6 +413,45 @@ const hasContent = computed(() =>
         <div class="sig-line"><div>____________________________</div><div>{{ t('reports.signature') }}</div></div>
       </div>
     </div>
+
+    <!-- ===================== Преглед за наплата (по вид на возило) ===================== -->
+    <div v-else-if="mode === 'preview' && preview" class="report-sheet">
+      <div class="report-head">
+        <div class="rh-company">{{ preview.companyName }}</div>
+        <div class="rh-title">{{ t('reports.preview.docTitle', { name: (previewLoadedCat ?? selectedPreviewCat).label }) }}</div>
+        <div class="rh-period">{{ t('reports.preview.period', { from: preview.from, to: preview.to }) }}</div>
+      </div>
+
+      <table v-if="preview.rows.length" class="report-table preview-table">
+        <thead>
+          <tr>
+            <th>{{ t('reports.preview.col.kind') }}</th>
+            <th class="c-veh">{{ t('reports.preview.col.vehicles') }}</th>
+            <th class="c-amount">{{ t('reports.preview.col.amount') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in preview.rows" :key="r.kind">
+            <td>{{ r.kind }}</td>
+            <td class="c-veh mono">{{ r.vehicles }}</td>
+            <td class="c-amount mono">{{ fmtMoney(r.amount) }}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="total-label">{{ t('reports.totalLabel') }}</td>
+            <td class="c-veh mono total-val">{{ preview.totalVehicles }}</td>
+            <td class="c-amount mono total-val">{{ fmtMoney(preview.totalAmount) }} {{ t('reports.den') }}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div v-else class="empty-state"><i class="pi pi-inbox" /><span>{{ t('reports.empty') }}</span></div>
+
+      <div v-if="preview.rows.length" class="report-signature print-only">
+        <div class="sig-mp">М.П.</div>
+        <div class="sig-line"><div>____________________________</div><div>{{ t('reports.signature') }}</div></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -291,12 +460,18 @@ const hasContent = computed(() =>
 
 /* --- Toolbar --- */
 .toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: .6rem;
+  /* глобалниот .toolbar има align-items:center (за ред-распоред) — тука колоната
+     мора да ги растегне редиците на полна ширина за да не „шетаат" контролите */
+  align-items: stretch;
   background: var(--p-content-background);
   border: 1px solid var(--p-content-border-color);
   border-radius: 12px;
   padding: .7rem 1rem;
+}
+.tb-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
 }
 .tb-title { display: flex; align-items: center; gap: .7rem }
 .tb-icon {
@@ -309,7 +484,6 @@ const hasContent = computed(() =>
 .tb-title h1 { margin: 0; font-size: 1.05rem; font-weight: 700; line-height: 1.2 }
 .tb-sub { margin: .1rem 0 0; font-size: .74rem; color: var(--p-text-muted-color) }
 
-.tb-controls { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap }
 .period-pick {
   display: flex; align-items: center; gap: .4rem;
   background: var(--p-content-hover-background, rgba(0,0,0,.03));
@@ -317,6 +491,8 @@ const hasContent = computed(() =>
   border-radius: 10px; padding: .3rem .35rem;
 }
 .period-pick .dash { color: var(--p-text-muted-color) }
+.ctl-cat { min-width: 12rem; max-width: 16rem }
+.ctl-cat :deep(.p-select-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ctl-month { min-width: 8.5rem }
 .ctl-year { flex: 0 0 auto }
 .ctl-year :deep(.year-input) { width: 4.6rem; text-align: center }
@@ -370,6 +546,8 @@ const hasContent = computed(() =>
 .report-table .c-acc { width: 11rem; white-space: nowrap }
 .report-table .c-form { width: 4.5rem; white-space: nowrap }
 .report-table .c-amount { width: 9rem; text-align: right; white-space: nowrap }
+.report-table .c-veh { width: 8rem; text-align: right; white-space: nowrap }
+.preview-table { max-width: 620px; margin: 0 auto }
 .report-table tbody tr:nth-child(even) td { background: var(--sheet-zebra) }
 .bank-sub { display: block; font-size: .68rem; color: var(--sheet-muted) }
 .total-label { text-align: right; font-weight: 700; background: var(--sheet-head-bg) !important }
