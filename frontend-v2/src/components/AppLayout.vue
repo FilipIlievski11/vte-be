@@ -36,6 +36,7 @@ const groups: MenuGroup[] = [
       { to: '/ref/request-attachment-types',        labelKey: 'admin.requestAttachmentTypes' },
       { to: '/prices',                              labelKey: 'admin.prices' },
       { to: '/billing-categories',                  labelKey: 'admin.billingCategories' },
+      { to: '/print-templates',                     labelKey: 'admin.printTemplates' },
       { to: '/legacy-sync',                         labelKey: 'admin.legacySync' },
     ],
   },
@@ -81,6 +82,19 @@ function goBack() {
 const sidebarCollapsed = ref<boolean>(localStorage.getItem('vte.v2.sidebar') === 'collapsed');
 watch(sidebarCollapsed, v => { localStorage.setItem('vte.v2.sidebar', v ? 'collapsed' : 'open'); });
 
+// Mobile: the sidebar becomes an overlay drawer (hidden by default, hamburger
+// opens it, backdrop/navigation closes it). isMobile via matchMedia so the same
+// hamburger drives collapse on desktop and the drawer on phones.
+const mq = window.matchMedia('(max-width: 768px)');
+const isMobile = ref(mq.matches);
+mq.addEventListener('change', e => { isMobile.value = e.matches; if (!e.matches) mobileNavOpen.value = false; });
+const mobileNavOpen = ref(false);
+function toggleSidebar() {
+  if (isMobile.value) mobileNavOpen.value = !mobileNavOpen.value;
+  else sidebarCollapsed.value = !sidebarCollapsed.value;
+}
+watch(() => route.fullPath, () => { mobileNavOpen.value = false; });
+
 // Language toggle
 const lang = ref<Locale>(locale.value as Locale);
 watch(lang, v => { setLocale(v); locale.value = v; });
@@ -104,6 +118,7 @@ const pageTitle = computed(() => {
   if (path.startsWith('/fiscal')) return t('nav.fiscal');
   if (path.startsWith('/reports')) return t('nav.reports');
   if (path.startsWith('/billing-categories')) return `${t('nav.administration')} · ${t('admin.billingCategories')}`;
+  if (path.startsWith('/print-templates')) return `${t('nav.administration')} · ${t('admin.printTemplates')}`;
   if (path.startsWith('/companies')) return `${t('nav.administration')} · ${t('admin.companies')}`;
   if (path.startsWith('/stations')) return `${t('nav.administration')} · ${t('admin.stations')}`;
   if (path.startsWith('/operators')) return `${t('nav.administration')} · ${t('admin.operators')}`;
@@ -126,7 +141,8 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'shell-collapsed': sidebarCollapsed }">
+  <div class="app-shell" :class="{ 'shell-collapsed': sidebarCollapsed, 'mobile-nav-open': mobileNavOpen }">
+    <div class="mobile-backdrop" v-if="mobileNavOpen" @click="mobileNavOpen = false"></div>
     <aside class="app-sidebar">
       <div class="brand">
         <div class="brand-mark"><i class="pi pi-car" /></div>
@@ -217,8 +233,8 @@ async function logout() {
       <div class="left">
         <Button
           severity="secondary" text rounded size="small"
-          :icon="sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left'"
-          @click="sidebarCollapsed = !sidebarCollapsed"
+          :icon="isMobile ? 'pi pi-bars' : (sidebarCollapsed ? 'pi pi-bars' : 'pi pi-angle-double-left')"
+          @click="toggleSidebar"
           v-tooltip.bottom="sidebarCollapsed ? t('app.showSidebar') : t('app.hideSidebar')"
         />
         <Button
@@ -257,7 +273,7 @@ async function logout() {
             <span>{{ auth.roles.join(', ') }}</span>
           </div>
         </RouterLink>
-        <Button severity="secondary" :label="t('app.signOut')" icon="pi pi-sign-out" outlined size="small" @click="logout" />
+        <Button severity="secondary" :label="t('app.signOut')" icon="pi pi-sign-out" outlined size="small" class="logout-btn" @click="logout" />
       </div>
     </header>
 

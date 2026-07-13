@@ -134,6 +134,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/LegacySyncView.vue'),
         meta: { requiresAdmin: true },
       },
+      {
+        path: 'print-templates',
+        name: 'print-templates',
+        component: () => import('@/views/PrintTemplatesView.vue'),
+        meta: { requiresAdmin: true },
+      },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },

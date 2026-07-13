@@ -14,18 +14,23 @@
  * Field→data bindings cross-referenced from WinApp/Requests/PrintPlav.Designer.vb
  * (CurrentOwner.* / NewOwner.* / CurrentVehicle.*) and PrintPlav.vb.
  *
- * Edit mode (toolbar toggle) lets us drag-nudge any field; positions persist to
- * localStorage and can be exported as JSON.
+ * Layout editing uses the shared server-backed usePrintLayout system. Positions
+ * persist to the backend PrintLayout store keyed 'plav' (only the diff vs the
+ * built-in DEFAULT_POS is saved). Edit mode is entered by the admin editor via
+ * ?edit=1; the shared PrintLayoutToolbar drives save/reset/font/nudge.
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type { RequestPrintBundle } from '@/types';
+import { usePrintLayout } from '@/composables/usePrintLayout';
+import PrintLayoutToolbar from '@/components/PrintLayoutToolbar.vue';
+import PrintRulers from '@/components/PrintRulers.vue';
 
 const props = defineProps<{
   bundle: RequestPrintBundle;
+  // Kept optional for backward compatibility; edit UI is driven by lay.editing.
   showGuides?: boolean;
   editMode?: boolean;
 }>();
-const emit = defineEmits<{ (e: 'positions-changed', positions: AllPos): void }>();
 
 const b = () => props.bundle;
 
@@ -53,9 +58,12 @@ function plateOrPrefix(raw: string | null | undefined): string {
 interface Pos { x: number; y: number; w: number; h?: number; align?: 'left'|'center'|'right'; bold?: boolean; size?: number; label?: string }
 type PageMap = Record<string, Pos>;
 interface AllPos { page1: PageMap; page2: PageMap; page3: PageMap }
+type PageKey = 'page1' | 'page2' | 'page3';
 
 // ============================================================================
 //  Positions from Downloads/PrintPlav.xml (legacy .prnx), absolute mm per page.
+//  DEFAULT_POS carries the STATIC meta (x/y = built-in default; w/h/align/bold/
+//  label/size) — the resolved x/y/size comes from the saved-layout composable.
 // ============================================================================
 const DEFAULT_POS: AllPos = {
   page1: {
@@ -144,69 +152,20 @@ const DEFAULT_POS: AllPos = {
   },
 };
 
-const STORAGE_KEY = 'vte.v2.print.plav.positions.v2';   // v2 — bumped after adding field alignment
-const pos = ref<AllPos>(loadInitial());
+// ---- Saved-layout system (positions in mm; A4 width 210mm) ----
+const lay = usePrintLayout('plav', 210);
+const guides = ref(true);
 
-function loadInitial(): AllPos {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      const merged: AllPos = { page1: {}, page2: {}, page3: {} };
-      for (const p of ['page1', 'page2', 'page3'] as const) {
-        for (const k of Object.keys(DEFAULT_POS[p])) {
-          merged[p][k] = { ...DEFAULT_POS[p][k], ...(saved?.[p]?.[k] ?? {}) };
-        }
-      }
-      return merged;
-    }
-  } catch { /* ignore */ }
-  return JSON.parse(JSON.stringify(DEFAULT_POS));
-}
-watch(pos, v => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); } catch { /* quota */ }
-  emit('positions-changed', v);
-}, { deep: true });
-
-function resetPositions() {
-  pos.value = JSON.parse(JSON.stringify(DEFAULT_POS));
-  localStorage.removeItem(STORAGE_KEY);
-}
-function exportPositions(): string {
-  const minimal: Record<string, Record<string, { x: number; y: number }>> = {};
-  for (const p of ['page1', 'page2', 'page3'] as const) {
-    minimal[p] = {};
-    for (const k of Object.keys(pos.value[p])) {
-      minimal[p][k] = { x: pos.value[p][k].x, y: pos.value[p][k].y };
-    }
+// Flat default map for the composable: `${page}.${key}` → {x,y,size}. Font size
+// defaults to 10pt (matching the render's `size ?? 10`) so a size override is
+// always relative to the printed default.
+const DEF: Record<string, { x: number; y: number; size?: number }> = {};
+for (const page of ['page1', 'page2', 'page3'] as const) {
+  for (const [key, p] of Object.entries(DEFAULT_POS[page])) {
+    DEF[`${page}.${key}`] = { x: p.x, y: p.y, size: p.size ?? 10 };
   }
-  return JSON.stringify(minimal, null, 2);
 }
-defineExpose({ resetPositions, exportPositions });
-
-// --- Drag handling ---
-const dragging = ref<{ page: 'page1'|'page2'|'page3'; key: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-function startDrag(page: 'page1'|'page2'|'page3', key: string, ev: MouseEvent) {
-  if (!props.editMode) return;
-  ev.preventDefault();
-  ev.stopPropagation();
-  const p = pos.value[page][key];
-  dragging.value = { page, key, startX: ev.clientX, startY: ev.clientY, origX: p.x, origY: p.y };
-}
-function onMouseMove(ev: MouseEvent) {
-  if (!dragging.value) return;
-  const PX_PER_MM = 3.7795275591;
-  const dx = (ev.clientX - dragging.value.startX) / PX_PER_MM;
-  const dy = (ev.clientY - dragging.value.startY) / PX_PER_MM;
-  const p = pos.value[dragging.value.page][dragging.value.key];
-  p.x = Math.max(0, Math.min(210, dragging.value.origX + dx));
-  p.y = Math.max(0, Math.min(297, dragging.value.origY + dy));
-}
-function onMouseUp() { dragging.value = null; }
-onMounted(() => {
-  window.addEventListener('mousemove', onMouseMove);
-  window.addEventListener('mouseup', onMouseUp);
-});
+lay.setDefaults(DEF);
 
 // New-registration prefix: legacy prints "{NewCommunityCode}-". The newest
 // registration row IS the newly-issued one (sentinel "{Code}-000-AA"), so
@@ -377,26 +336,31 @@ const categoryCheckboxY = computed<number | null>(() => {
   return zm != null ? (CATEGORY_CHECKBOX_Y[zm] ?? null) : null;
 });
 
-function fieldStyle(p: Pos, key?: string): Record<string, string> {
-  const align = p.align ?? 'left';
+// Resolve a field's style from the saved-layout composable, then re-apply the
+// EXISTING data-driven dynamic shifts on top of the resolved y (identical logic
+// to the pre-server-layout version — only the base x/y/size now come from resolve).
+function fieldStyle(page: PageKey, key: string): Record<string, string> {
+  const meta = DEFAULT_POS[page][key];
+  const base = lay.resolve(`${page}.${key}`);
+  const align = meta.align ?? 'left';
   const justify =
     align === 'right'  ? 'flex-end'   :
     align === 'center' ? 'center'     :
     'flex-start';
   // The category checkbox moves to the row matching the vehicle's ZelenMap.
-  let top = (key === 'variantMark' && categoryCheckboxY.value != null)
-    ? categoryCheckboxY.value : p.y;
+  let top = base.y;
+  if (key === 'variantMark' && categoryCheckboxY.value != null) top = categoryCheckboxY.value;
   // Rows below a (possibly wrapped) address shift down, like the legacy CanGrow.
   if (key === 'curCommunity' || key === 'curEmbg') top += page1AddrShiftMm.value;
   if (key === 'newCommunity' || key === 'newEmbg') top += page3AddrShiftMm.value;
 
   const style: Record<string, string> = {
-    left:           p.x + 'mm',
+    left:           base.x + 'mm',
     top:            top + 'mm',
-    width:          p.w + 'mm',
-    height:         (p.h ?? 5) + 'mm',
-    fontSize:       (p.size ?? 10) + 'pt',
-    fontWeight:     p.bold ? '700' : '400',
+    width:          meta.w + 'mm',
+    height:         (meta.h ?? 5) + 'mm',
+    fontSize:       base.size + 'pt',
+    fontWeight:     meta.bold ? '700' : '400',
     textAlign:      align,
     justifyContent: justify,
   };
@@ -440,66 +404,79 @@ function shouldRenderP1(key: string): boolean {
 
 // Page 3 (the new/sole owner + new registration) is always present on Plav.
 const showPage3 = computed(() => true);
+
+onMounted(async () => {
+  await lay.load();
+});
 </script>
 
 <template>
   <!-- ============= PAGE 1 — FRONT ============= -->
-  <article class="sheet" :class="{ guides: showGuides, edit: editMode }">
-    <div v-if="showGuides" class="grid-overlay no-print"></div>
-    <div v-if="showGuides" class="page-label no-print">ПЛАВ · стр. 1 · ПРЕДНА</div>
+  <article
+    class="sheet"
+    :ref="(el) => lay.setPageEl(el as HTMLElement | null)"
+    :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }"
+  >
+      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+    <div v-if="lay.editing.value && guides" class="grid-overlay no-print"></div>
+    <div v-if="lay.editing.value && guides" class="page-label no-print">ПЛАВ · стр. 1 · ПРЕДНА</div>
 
-    <template v-for="(p, key) in pos.page1" :key="'p1:' + key">
+    <template v-for="(p, key) in DEFAULT_POS.page1" :key="'p1:' + key">
       <span
         v-if="shouldRenderP1(key as string)"
         class="f"
-        :class="{ bold: p.bold, draggable: editMode }"
-        :style="fieldStyle(p, key as string)"
+        :class="{ bold: p.bold, sel: lay.selectedKey.value === 'page1.' + key }"
+        :style="fieldStyle('page1', key as string)"
         :data-key="'page1:' + key"
-        @mousedown="startDrag('page1', key as string, $event)"
+        @pointerdown="lay.beginDrag('page1.' + key, $event)"
       >
         <span class="f-val">{{ (v.page1 as any)[key] }}</span>
-        <span v-if="showGuides" class="f-tag no-print">{{ p.label || key }}</span>
+        <span v-if="lay.editing.value && guides" class="f-tag no-print">{{ p.label || key }}</span>
       </span>
     </template>
   </article>
 
   <!-- ============= PAGE 2 — VEHICLE ============= -->
-  <article class="sheet" :class="{ guides: showGuides, edit: editMode }">
-    <div v-if="showGuides" class="grid-overlay no-print"></div>
-    <div v-if="showGuides" class="page-label no-print">ПЛАВ · стр. 2 · ВОЗИЛО</div>
+  <article class="sheet" :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+    <div v-if="lay.editing.value && guides" class="grid-overlay no-print"></div>
+    <div v-if="lay.editing.value && guides" class="page-label no-print">ПЛАВ · стр. 2 · ВОЗИЛО</div>
 
-    <template v-for="(p, key) in pos.page2" :key="'p2:' + key">
+    <template v-for="(p, key) in DEFAULT_POS.page2" :key="'p2:' + key">
       <span
         class="f"
-        :class="{ bold: p.bold, draggable: editMode }"
-        :style="fieldStyle(p)"
+        :class="{ bold: p.bold, sel: lay.selectedKey.value === 'page2.' + key }"
+        :style="fieldStyle('page2', key as string)"
         :data-key="'page2:' + key"
-        @mousedown="startDrag('page2', key as string, $event)"
+        @pointerdown="lay.beginDrag('page2.' + key, $event)"
       >
         <span class="f-val">{{ (v.page2 as any)[key] }}</span>
-        <span v-if="showGuides" class="f-tag no-print">{{ p.label || key }}</span>
+        <span v-if="lay.editing.value && guides" class="f-tag no-print">{{ p.label || key }}</span>
       </span>
     </template>
   </article>
 
   <!-- ============= PAGE 3 — NEW OWNER ============= -->
-  <article v-if="showPage3" class="sheet" :class="{ guides: showGuides, edit: editMode }">
-    <div v-if="showGuides" class="grid-overlay no-print"></div>
-    <div v-if="showGuides" class="page-label no-print">ПЛАВ · стр. 3 · НОВ СОПСТВЕНИК</div>
+  <article v-if="showPage3" class="sheet" :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+    <div v-if="lay.editing.value && guides" class="grid-overlay no-print"></div>
+    <div v-if="lay.editing.value && guides" class="page-label no-print">ПЛАВ · стр. 3 · НОВ СОПСТВЕНИК</div>
 
-    <template v-for="(p, key) in pos.page3" :key="'p3:' + key">
+    <template v-for="(p, key) in DEFAULT_POS.page3" :key="'p3:' + key">
       <span
         class="f"
-        :class="{ bold: p.bold, draggable: editMode }"
-        :style="fieldStyle(p)"
+        :class="{ bold: p.bold, sel: lay.selectedKey.value === 'page3.' + key }"
+        :style="fieldStyle('page3', key as string)"
         :data-key="'page3:' + key"
-        @mousedown="startDrag('page3', key as string, $event)"
+        @pointerdown="lay.beginDrag('page3.' + key, $event)"
       >
         <span class="f-val">{{ (v.page3 as any)[key] }}</span>
-        <span v-if="showGuides" class="f-tag no-print">{{ p.label || key }}</span>
+        <span v-if="lay.editing.value && guides" class="f-tag no-print">{{ p.label || key }}</span>
       </span>
     </template>
   </article>
+
+  <PrintLayoutToolbar v-if="lay.editing.value" :lay="lay" :name="'ПЛАВ образец'" v-model:guides="guides" />
 </template>
 
 <style scoped>
@@ -534,6 +511,7 @@ const showPage3 = computed(() => true);
 .f.bold { font-weight: 700 }
 .f-val { display: inline-block; max-width: 100% }
 
+/* Guide highlight (field outlines + labels) while editing with guides on. */
 .sheet.guides .f {
   outline: 1px dashed rgba(255, 0, 0, .5);
   background: rgba(255, 255, 0, .15);
@@ -545,14 +523,19 @@ const showPage3 = computed(() => true);
   padding: 0 2px; border-radius: 2px; pointer-events: none;
   white-space: nowrap; line-height: 1;
 }
-.sheet.edit .f.draggable {
+/* Drag affordance in edit mode. */
+.sheet.editing .f {
   cursor: move;
-  outline: 1px dashed rgba(34, 197, 94, .6);
-  background: rgba(187, 247, 208, .35);
+  outline: 1px dashed rgba(37, 99, 235, .5);
+  outline-offset: 0;
 }
-.sheet.edit .f.draggable:hover {
-  outline: 2px solid #16a34a;
-  background: rgba(134, 239, 172, .55);
+.sheet.editing .f:hover {
+  outline: 2px solid rgba(37, 99, 235, .9);
+  background: rgba(37, 99, 235, .06);
+}
+.sheet.editing .f.sel {
+  outline: 1.5px solid #2563eb;
+  background: rgba(37, 99, 235, .12);
 }
 
 .grid-overlay {
@@ -572,7 +555,7 @@ const showPage3 = computed(() => true);
 
 @media print {
   .sheet { box-shadow: none; margin: 0 }
-  .sheet.guides .f, .sheet.edit .f.draggable {
+  .sheet.guides .f, .sheet.editing .f {
     outline: none; background: transparent;
   }
   .f-tag { display: none !important }

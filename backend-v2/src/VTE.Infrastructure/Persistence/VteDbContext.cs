@@ -7,6 +7,7 @@ using VTE.Domain.Identity;
 using VTE.Domain.InternationalDrivingLicences;
 using VTE.Domain.Payments;
 using VTE.Domain.Permissions;
+using VTE.Domain.Printing;
 using VTE.Domain.References;
 using VTE.Domain.Requests;
 using VTE.Domain.Stations;
@@ -91,6 +92,9 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CustomerDebt> CustomerDebts => Set<CustomerDebt>();
     public DbSet<CalculationItem> CalculationItems => Set<CalculationItem>();
     public DbSet<PaymentCategoryGroup> PaymentCategoryGroups => Set<PaymentCategoryGroup>();
+
+    // Print-template saved layouts (global config, edited via „Печатни обрасци").
+    public DbSet<PrintLayout> PrintLayouts => Set<PrintLayout>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -870,6 +874,16 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasOne<CalculationItem>().WithMany().HasForeignKey(x => x.CalculationItemId).OnDelete(DeleteBehavior.Restrict);
             // PriceCatalog.PaymentCategoryGroupId deliberately stays a LOOSE int:
             // migrated rules reference group ids deleted upstream in legacy.
+        });
+
+        // Saved print-template layouts (global config, string PK by template code).
+        b.Entity<PrintLayout>(e =>
+        {
+            e.ToTable("PrintLayout");
+            e.HasKey(x => x.Code);
+            e.Property(x => x.Code).HasMaxLength(40);
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.LayoutJson).IsRequired();   // nvarchar(max)
         });
     }
 }

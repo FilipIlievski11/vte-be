@@ -1,13 +1,112 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { api } from '@/api/client';
 import type { TechExamCertificate } from '@/types';
+import { usePrintLayout } from '@/composables/usePrintLayout';
+import PrintLayoutToolbar from '@/components/PrintLayoutToolbar.vue';
+import PrintRulers from '@/components/PrintRulers.vue';
 
 const props = defineProps<{ id: string }>();
 
 const cert = ref<TechExamCertificate | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+
+// ---- Saved-layout system (positions in mm; A4 width 210mm) ----
+// This certificate is a SEMANTIC FLOW document (letterhead, title, table, signatures)
+// that prints on blank A4. The flow is the visual base and is NEVER torn apart. Only a
+// small set of standalone VALUE fields are made admin-repositionable: in NON-edit mode
+// they render EXACTLY as the original inline flow (so real print output stays
+// byte-identical); in edit mode (?edit=1) each becomes a draggable absolutely-positioned
+// overlay driven by lay.resolve(key). Defaults sit roughly where the value renders today.
+const lay = usePrintLayout('techexam-cert', 210);
+const guides = ref(true);
+
+// Editable value keys:
+//   regNumber → the "Број:" certificate/reg number line (празна линија — број се пишува)
+//   validTill → the validity ("нареден технички преглед на") date
+//   placeDate → the signature-left "Место и датум:" line (issue date + place)
+//
+// Бидејќи ова е FLOW документ (нема вградени координати), стандардните позиции се
+// МЕРАТ од реално рендерираниот документ при отворање на едиторот — така едит-режимот
+// почнува со вредностите точно таму каде што се печатат. Мерењето е во mm (CSS mm =
+// исти единици со кои се позиционираат overlay-ите), па се совпаѓа на секој екран.
+const measured = ref(false);
+const paperRef = ref<HTMLElement | null>(null);
+function setPaper(el: HTMLElement | null) { paperRef.value = el; lay.setPageEl(el); }
+
+function rectMm(r: DOMRect, paper: DOMRect): { x: number; y: number } {
+  const k = 210 / paper.width;   // A4 width in mm / rendered px
+  return { x: (r.left - paper.left) * k, y: (r.top - paper.top) * k };
+}
+function textRect(el: Element | null): DOMRect | null {
+  if (!el) return null;
+  const tn = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim());
+  if (!tn) return el.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(tn);
+  return range.getBoundingClientRect();
+}
+async function measureDefaults() {
+  await nextTick();
+  const paper = paperRef.value;
+  if (!paper) return;
+  const pr = paper.getBoundingClientRect();
+  const def: Record<string, { x: number; y: number; size?: number }> = {};
+
+  // Датумите: точната позиција на текстот во токот.
+  const vt = textRect(paper.querySelector('.date-underline'));
+  if (vt) { const p = rectMm(vt, pr); def.validTill = { x: p.x, y: p.y, size: 12 }; }
+  const pd = textRect(paper.querySelector('.sig-value'));
+  if (pd) { const p = rectMm(pd, pr); def.placeDate = { x: p.x, y: p.y, size: 12 }; }
+  // Бројот: празна линија — постави го текстот на самата линија.
+  const fl = paper.querySelector('.fill-line')?.getBoundingClientRect();
+  if (fl) {
+    const p = rectMm(fl, pr);
+    const k = 210 / pr.width;
+    def.regNumber = { x: p.x + 2, y: p.y + fl.height * k - 4.6, size: 12 };
+  }
+  lay.setDefaults(def);
+  measured.value = true;
+}
+
+function fStyle(key: string): string {
+  const p = lay.resolve(key);
+  return `left:${p.x}mm; top:${p.y}mm; font-size:${p.size}pt;`;
+}
+// A value renders as a positioned overlay (instead of its inline flow spot) when it is
+// being edited (once measured) OR has a saved position — so admin edits actually move it
+// on the PRINT, while the untouched default keeps the original flow layout (byte-identical).
+function hasOverride(key: string): boolean { return !!lay.overrides.value[key]; }
+function overlaid(key: string): boolean {
+  return lay.editing.value ? measured.value : hasOverride(key);
+}
+
+// Representative sample values used in layout-edit mode (no real record needed).
+const SAMPLE: TechExamCertificate = {
+  id: 0,
+  regNumber: '0123/2026',
+  madeDate: '2026-07-10',
+  validTillDate: '2027-07-10',
+  vehicleIsRight: true,
+  stationCity: 'Велес',
+  controllerName: 'ПЕТАР ПЕТРОВСКИ',
+  organization: {
+    name: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ',
+    address: 'ул. Димитар Влахов бр. 12',
+    cityLine: '1400 Велес',
+    phone: '043/234-567',
+    fax: '043/234-568',
+  },
+  vehicle: {
+    registration: 'VE-1234-AB',
+    category: 'Патничко возило',
+    maker: 'VOLKSWAGEN',
+    typeText: 'GOLF',
+    model: '1.6 TDI',
+    vin: 'WVWZZZ1KZAW000000',
+  },
+};
 
 function fmtDate(s: string | null): string {
   if (!s) return '—';
@@ -18,7 +117,20 @@ function fmtDate(s: string | null): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
+function placeDateText(c: TechExamCertificate): string {
+  return [c.stationCity, fmtDate(c.madeDate)].filter(Boolean).join(', ');
+}
+
 onMounted(async () => {
+  await lay.load();
+  if (lay.editing.value) {
+    // Layout-edit mode: sample data, never auto-print. Прво се рендерира токот со
+    // видливи вредности, се мерат нивните реални позиции, па се вклучуваат overlay-ите.
+    cert.value = SAMPLE;
+    loading.value = false;
+    await measureDefaults();
+    return;
+  }
   try {
     const { data } = await api.get<TechExamCertificate>(`/technical-exams/${props.id}/print`);
     cert.value = data;
@@ -41,7 +153,9 @@ function doClose() { window.close(); }
     <div v-if="loading" class="loading">Се вчитува…</div>
     <div v-else-if="error" class="error">{{ error }}</div>
 
-    <div v-else-if="cert" class="paper">
+    <div v-else-if="cert" :ref="(el) => setPaper(el as HTMLElement | null)"
+         class="paper" :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
       <!-- Letterhead -->
       <div class="letterhead">
         <div class="org-name">{{ (cert.organization.name || '').toUpperCase() }}</div>
@@ -65,7 +179,9 @@ function doClose() { window.close(); }
 
       <!-- Title -->
       <h1 class="title">ПОТВРДА</h1>
-      <div class="reg-no">Број: <strong>{{ cert.regNumber || '—' }}</strong></div>
+      <!-- Бројот: празна линија за рачно пишување — линијата останува секогаш;
+           бројот се печати врз неа само ако админот зачувал позиција. -->
+      <div class="reg-no">Број: <span class="fill-line"></span></div>
 
       <p class="descriptor">за извршен преглед на техничка исправност на моторното возило:</p>
 
@@ -88,7 +204,7 @@ function doClose() { window.close(); }
       <!-- Next exam -->
       <p class="next-exam">
         Возилото треба да го изврши наредниот технички преглед на
-        <span class="date-underline">{{ fmtDate(cert.validTillDate) }}</span>
+        <span class="date-underline" :class="{ ghost: overlaid('validTill') }">{{ fmtDate(cert.validTillDate) }}</span>
       </p>
       <p class="next-exam-caption">(датум на нареден технички преглед)</p>
 
@@ -96,17 +212,28 @@ function doClose() { window.close(); }
       <div class="signatures">
         <div class="sig-left">
           <div>Место и датум:
-            <span class="sig-value">{{ [cert.stationCity, fmtDate(cert.madeDate)].filter(Boolean).join(', ') }}</span>
+            <span class="sig-value" :class="{ ghost: overlaid('placeDate') }">{{ placeDateText(cert) }}</span>
           </div>
         </div>
         <div class="sig-right">
-          <div class="sig-name" v-if="cert.controllerName">{{ cert.controllerName }}</div>
+          <!-- Без име — се потпишува рачно на празната линија. -->
           <div class="sig-line"></div>
           <div class="sig-label">Потпис и печат:</div>
         </div>
       </div>
 
-      <div class="toolbar no-print">
+      <!-- ===== Positioned value overlays. Shown while editing OR when a saved position
+               exists — so admin edits move the value on the actual print too. ===== -->
+      <span v-if="overlaid('regNumber')" class="f fbold" :class="{ sel: lay.selectedKey.value === 'regNumber' }"
+            :style="fStyle('regNumber')" @pointerdown="lay.beginDrag('regNumber', $event)">{{ cert.regNumber || '' }}</span>
+      <span v-if="overlaid('validTill')" class="f fbold" :class="{ sel: lay.selectedKey.value === 'validTill' }"
+            :style="fStyle('validTill')" @pointerdown="lay.beginDrag('validTill', $event)">{{ fmtDate(cert.validTillDate) }}</span>
+      <span v-if="overlaid('placeDate')" class="f fbold" :class="{ sel: lay.selectedKey.value === 'placeDate' }"
+            :style="fStyle('placeDate')" @pointerdown="lay.beginDrag('placeDate', $event)">{{ placeDateText(cert) }}</span>
+
+      <PrintLayoutToolbar v-if="lay.editing.value" :lay="lay" :name="'Потврда за техничка исправност'" v-model:guides="guides" />
+
+      <div v-if="!lay.editing.value" class="toolbar no-print">
         <button @click="doPrint">Печати</button>
         <button @click="doClose">Затвори</button>
       </div>
@@ -117,6 +244,7 @@ function doClose() { window.close(); }
 <style scoped>
 .print-wrap { background: #e0e0e0; min-height: 100vh; padding: 1rem 0; }
 .paper {
+  position: relative;
   width: 210mm; min-height: 297mm; padding: 16mm 18mm;
   margin: 0 auto; background: #fff; color: #000;
   font-family: "Times New Roman", Georgia, serif; font-size: 12pt; line-height: 1.45;
@@ -130,6 +258,7 @@ function doClose() { window.close(); }
 .preamble { text-align: center; margin: 0 0 1.2rem; }
 .title { text-align: center; font-size: 18pt; font-weight: 700; margin: 0 0 .2rem; letter-spacing: 1px; }
 .reg-no { text-align: center; margin-bottom: 1.4rem; }
+.fill-line { display: inline-block; width: 42mm; border-bottom: 1px solid #000; vertical-align: baseline; }
 .descriptor { text-align: center; margin: 0 0 .8rem; }
 .vehicle-table { width: 100%; border-collapse: collapse; margin-bottom: 1.6rem; }
 .vehicle-table td { border: 1px solid #000; padding: .3rem .5rem; vertical-align: middle; }
@@ -139,6 +268,9 @@ function doClose() { window.close(); }
 .statement { text-align: justify; margin: 0 0 2rem; }
 .next-exam { margin: 0 0 .1rem; }
 .date-underline { border-bottom: 1px solid #000; padding: 0 1.5rem; font-weight: 700; }
+/* Преместена вредност: текстот е проѕирен во токот (линијата ја задржува ширината),
+   а се исцртува преку позиционираниот overlay. */
+.ghost { color: transparent !important; }
 .next-exam-caption { font-size: 8pt; font-style: italic; margin: 0 0 3rem; }
 .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2.5rem; align-items: end; }
 .sig-value { font-weight: 700; }
@@ -151,6 +283,18 @@ function doClose() { window.close(); }
 .error { color: #b91c1c; }
 .toolbar.no-print { position: fixed; right: 1rem; top: 1rem; display: flex; gap: .5rem; z-index: 999; }
 .toolbar.no-print button { padding: .35rem .75rem; border: 1px solid #888; background: #fff; border-radius: 4px; cursor: pointer; font-size: .85rem; }
+
+/* ---- Layout-edit affordances (screen only) — draggable value overlays ---- */
+.f { position: absolute; white-space: nowrap; line-height: 1; }
+.fbold { font-weight: 700; }
+.paper.editing .f { cursor: move; outline: 1px dashed rgba(37,99,235,.4); outline-offset: 0; }
+.paper.editing .f:hover { outline-color: rgba(37,99,235,.9); background: rgba(37,99,235,.06); }
+.paper.editing .f.sel { outline: 1.5px solid #2563eb; background: rgba(37,99,235,.12); }
+.paper.guides {
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0, transparent calc(10mm - 1px), rgba(37,99,235,.12) 10mm),
+    repeating-linear-gradient(90deg, transparent 0, transparent calc(10mm - 1px), rgba(37,99,235,.12) 10mm);
+}
 
 @media print {
   .print-wrap { background: #fff; padding: 0; }

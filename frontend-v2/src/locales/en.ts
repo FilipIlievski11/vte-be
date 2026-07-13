@@ -704,7 +704,22 @@ export default {
   reports: {
     title: 'Reports',
     subtitle: 'Daily distribution and monthly collection reports.',
-    mode: { distribution: 'Daily distribution', monthly: 'Monthly — Public roads' },
+    mode: { distribution: 'Daily distribution', monthly: 'Monthly report', preview: 'Collection preview' },
+    docTitleGeneric: 'Detailed monthly report of items — {name}',
+    cats: {
+      roads: 'Public roads',
+      budget: 'State budget',
+      redcross: 'Red Cross',
+      communal: 'Communal tax',
+      environment: 'Environment',
+      council: 'Republic safety council',
+      councilRoads: 'Republic safety council (from public roads)',
+    },
+    preview: {
+      docTitle: 'COLLECTION PREVIEW FOR: {name}',
+      period: 'Date from: {from}  to: {to}',
+      col: { kind: 'Vehicle kind', vehicles: 'No. of vehicles', amount: 'Collected amount' },
+    },
     dist: {
       docTitle: 'Daily distribution of collections by institution',
       periodDay: 'for {day}',
@@ -786,7 +801,48 @@ export default {
     requestAttachmentTypes: 'Attachment Types',
     prices: 'Price Catalog',
     billingCategories: 'Billing categories',
+    printTemplates: 'Print templates',
     legacySync: 'Legacy Sync',
+  },
+
+  printTemplates: {
+    title: 'Print templates',
+    subtitle: 'Preview the forms and adjust where the data prints.',
+    intro: 'Click "Edit" to drag the data into place on the paper, change the font size, and save. Saved layouts apply to every operator and computer.',
+    edit: 'Edit',
+    default: 'Default layout',
+    customized: 'Customized · {date}',
+    groups: {
+      requests: 'Requests (registration sheets)',
+      techexam: 'Technical inspection',
+      idl: 'International driving licences',
+      permission: 'Vehicle permissions',
+    },
+    names: {
+      plav: 'Blue registration sheet',
+      zelen: 'Green registration sheet',
+      techCert: 'Roadworthiness certificate',
+      techZap: 'Technical inspection record',
+      idlReq: 'International licence — request',
+      idlPermit: 'International licence — form',
+      permCert: 'Third-party vehicle permission',
+      permReq: 'Vehicle permission request',
+    },
+  },
+
+  printLayouts: {
+    saved: 'Layout saved',
+    saveFailed: 'Save failed',
+    resetDone: 'Reset to default',
+    resetAll: 'Reset to default',
+    resetAllConfirm: 'Reset all positions on this template to the defaults?',
+    resetField: 'Reset this field',
+    guides: 'Grid',
+    changed: '{n} changed',
+    pickHint: 'Click a field to move it or change its font.',
+    fontSmaller: 'Smaller font',
+    fontBigger: 'Larger font',
+    keysHint: 'Drag with mouse · arrows = fine (Shift = larger step) · +/− = font',
   },
 
   prices: {

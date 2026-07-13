@@ -2,12 +2,21 @@
 import { computed, onMounted, ref } from 'vue';
 import { api } from '@/api/client';
 import type { IdlRequestPrint } from '@/types';
+import { usePrintLayout } from '@/composables/usePrintLayout';
+import PrintLayoutToolbar from '@/components/PrintLayoutToolbar.vue';
+import PrintRulers from '@/components/PrintRulers.vue';
 
 const props = defineProps<{ id: string }>();
 
 const bundle = ref<IdlRequestPrint | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+
+// ---- Saved-layout system (positions in mm; A4 width 210mm) ----
+// Only the bound VALUES (dataItems) are editable/persisted. The STATIC[] form text and
+// UNDER[] fill-in rules keep their fixed extracted positions.
+const lay = usePrintLayout('idl-req', 210);
+const guides = ref(true);
 
 // Values print exactly as stored (Cyrillic) — no transliteration.
 function tl(s: string | null | undefined): string {
@@ -128,39 +137,105 @@ const UNDER: U[] = [
   { p: 2, x: 7.59, y: 167.75, w: 84.35 }, // place + date + година (continuous rule)
 ];
 
-// Data fields (bindings) — printed as stored (Cyrillic), exact positions of the sample values
-const dataItems = computed<T[]>(() => {
+// Data fields (bindings) — printed as stored (Cyrillic). Static layout per field: page,
+// bold, and DEFAULT x/y/size. Only x/y/size are editable — routed through lay.resolve(key).
+// p and b are fixed. The DEFAULT numbers below are the EXACT original coordinates.
+type DField = { k: string; p: number; x: number; y: number; s: number; b: 0 | 1 };
+const DATA_FIELDS: DField[] = [
+  { k: 'companyName',           p: 1, x: 91.2,  y: 66.4,  s: 9.8, b: 1 }, // legal-entity name in header
+  { k: 'applicantLine',         p: 1, x: 18.8,  y: 137.9, s: 9.8, b: 1 }, // applicant line
+  { k: 'nationalLicenceNumber', p: 1, x: 54.8,  y: 152.9, s: 9.8, b: 0 },
+  { k: 'nationalLicenceIssuer', p: 1, x: 48.2,  y: 157.6, s: 9.8, b: 0 },
+  { k: 'nationalLicenceDate',   p: 1, x: 48.2,  y: 162.3, s: 9.8, b: 0 },
+  { k: 'nationalLicenceExpiry', p: 1, x: 45.0,  y: 166.9, s: 9.8, b: 0 },
+  { k: 'idCardNumber',          p: 1, x: 43.1,  y: 202.7, s: 9.8, b: 0 },
+  { k: 'idCardIssuer',          p: 1, x: 97.9,  y: 202.7, s: 9.8, b: 0 },
+  { k: 'idCardDate',            p: 1, x: 151.0, y: 202.7, s: 9.8, b: 0 },
+  { k: 'submissionDate',        p: 1, x: 92.3,  y: 208.9, s: 9.8, b: 0 },
+  { k: 'submissionPlace',       p: 1, x: 136.2, y: 208.9, s: 9.8, b: 1 }, // place (bold in the original)
+  { k: 'intlIssueDate',         p: 2, x: 48.2,  y: 55.3,  s: 9.8, b: 0 },
+  { k: 'intlSerialNumber',      p: 2, x: 66.4,  y: 60.0,  s: 9.8, b: 0 },
+  { k: 'footerPlace',           p: 2, x: 8.1,   y: 166.2, s: 9.8, b: 0 },
+  { k: 'footerDate',            p: 2, x: 35.4,  y: 166.2, s: 9.8, b: 0 },
+];
+
+// Register the built-in defaults (mm + font pt) with the saved-layout system.
+const DEF: Record<string, { x: number; y: number; size?: number }> = {};
+for (const f of DATA_FIELDS) DEF[f.k] = { x: f.x, y: f.y, size: f.s };
+lay.setDefaults(DEF);
+
+// Per-field text values (key → printed string), computed from the bound bundle.
+const dataValues = computed<Record<string, string>>(() => {
   const b = bundle.value;
-  if (!b) return [];
-  return [
-    { p: 1, x: 91.2, y: 66.4, s: 9.8, b: 1, t: (b.companyName ?? '').trim() }, // legal-entity name in header
-    { p: 1, x: 18.8, y: 137.9, s: 9.8, b: 1, t: applicantLine.value },         // applicant line
-    { p: 1, x: 54.8, y: 152.9, s: 9.8, b: 0, t: b.numberOfNationalLicence },
-    { p: 1, x: 48.2, y: 157.6, s: 9.8, b: 0, t: tl(b.nationalLicenceIssuerName) },
-    { p: 1, x: 48.2, y: 162.3, s: 9.8, b: 0, t: fmt(b.nationalLicenceDate, true) },
-    { p: 1, x: 45.0, y: 166.9, s: 9.8, b: 0, t: fmt(b.nationalLicenceExpiry, true) },
-    { p: 1, x: 43.1, y: 202.7, s: 9.8, b: 0, t: b.idCardNumber ?? '' },
-    { p: 1, x: 97.9, y: 202.7, s: 9.8, b: 0, t: tl(b.idCardIssuerName) },
-    { p: 1, x: 151.0, y: 202.7, s: 9.8, b: 0, t: fmt(b.idCardDate, false) },
-    { p: 1, x: 92.3, y: 208.9, s: 9.8, b: 0, t: fmt(b.issuedDate, false) },
-    { p: 1, x: 136.2, y: 208.9, s: 9.8, b: 1, t: b.stationCityName ?? '' },    // place (bold in the original)
-    { p: 2, x: 48.2, y: 55.3, s: 9.8, b: 0, t: fmt(b.issuedDate, false) },
-    { p: 2, x: 66.4, y: 60.0, s: 9.8, b: 0, t: b.numberOfLicence },
-    { p: 2, x: 8.1, y: 166.2, s: 9.8, b: 0, t: b.stationCityName ?? '' },
-    { p: 2, x: 35.4, y: 166.2, s: 9.8, b: 0, t: fmt(b.issuedDate, false) },
-  ];
+  if (!b) return {} as Record<string, string>;
+  const r: Record<string, string> = {
+    companyName:           (b.companyName ?? '').trim(),
+    applicantLine:         applicantLine.value,
+    nationalLicenceNumber: b.numberOfNationalLicence,
+    nationalLicenceIssuer: tl(b.nationalLicenceIssuerName),
+    nationalLicenceDate:   fmt(b.nationalLicenceDate, true),
+    nationalLicenceExpiry: fmt(b.nationalLicenceExpiry, true),
+    idCardNumber:          b.idCardNumber ?? '',
+    idCardIssuer:          tl(b.idCardIssuerName),
+    idCardDate:            fmt(b.idCardDate, false),
+    submissionDate:        fmt(b.issuedDate, false),
+    submissionPlace:       b.stationCityName ?? '',
+    intlIssueDate:         fmt(b.issuedDate, false),
+    intlSerialNumber:      b.numberOfLicence,
+    footerPlace:           b.stationCityName ?? '',
+    footerDate:            fmt(b.issuedDate, false),
+  };
+  return r;
 });
 
-function itemsFor(pg: number): T[] {
-  return [...STATIC.filter(i => i.p === pg), ...dataItems.value.filter(i => i.p === pg)];
-}
+function staticsFor(pg: number): T[] { return STATIC.filter(i => i.p === pg); }
+function dataFor(pg: number): DField[] { return DATA_FIELDS.filter(f => f.p === pg); }
 function undFor(pg: number): U[] { return UNDER.filter(u => u.p === pg); }
 // The extracted y coordinates are text BASELINES (pdf text-matrix), not box tops — anchor
 // the CSS box so glyphs sit just above the fill-in lines (shift up ~0.30 × font-size).
 function tStyle(i: T) { return `left:${i.x}mm; top:${(i.y - i.s * 0.30).toFixed(2)}mm; font-size:${i.s}pt; font-weight:${i.b ? 700 : 400};`; }
+// Editable value fields: x/y/size come from resolve(key); bold stays fixed. Same baseline shift.
+function dStyle(f: DField) {
+  const p = lay.resolve(f.k);
+  return `left:${p.x}mm; top:${(p.y - p.size * 0.30).toFixed(2)}mm; font-size:${p.size}pt; font-weight:${f.b ? 700 : 400};`;
+}
 function uStyle(u: U) { return `left:${u.x}mm; top:${u.y}mm; width:${u.w}mm;`; }
 
+// Representative sample used in layout-edit mode (no real record needed).
+const SAMPLE: IdlRequestPrint = {
+  id: 0,
+  clientFullName: 'ПЕТАР ПЕТРОВСКИ',
+  dateOfBirth: '1985-03-12',
+  birthCityName: 'Велес',
+  citizenshipName: 'Македонско',
+  numberOfNationalLicence: 'ВЕ1234567',
+  numberOfLicence: 'МК-000123',
+  passportNumber: 'A1234567',
+  passportIssuerName: 'МВР Велес',
+  passportDate: '2020-05-01',
+  idCardNumber: 'A0987654',
+  idCardIssuerName: 'МВР Велес',
+  idCardDate: '2019-09-20',
+  nationalLicenceIssuerName: 'МВР Велес',
+  nationalLicenceDate: '2018-04-10',
+  nationalLicenceExpiry: '2028-04-10',
+  livingAddress: 'Браќа Миладиновци 21',
+  livingCityName: 'Велес',
+  embg: '1203985450012',
+  issuerOrgName: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ ВЕЛЕС',
+  companyName: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ ВЕЛЕС',
+  stationCityName: 'Велес',
+  issuedDate: '2026-06-15',
+};
+
 onMounted(async () => {
+  await lay.load();
+  if (lay.editing.value) {
+    // Layout-edit mode: use sample data, never auto-print.
+    bundle.value = SAMPLE;
+    loading.value = false;
+    return;
+  }
   try {
     const { data } = await api.get<IdlRequestPrint>(`/international-driving-licences/${props.id}/print`);
     bundle.value = data;
@@ -178,18 +253,28 @@ function doClose() { window.close(); }
 <template>
   <div class="screen">
     <!-- toolbar kept BEFORE the pages so .page:last-of-type matches the real last page -->
-    <div class="toolbar no-print">
+    <div v-if="!lay.editing.value" class="toolbar no-print">
       <button @click="doPrint">Печати</button>
       <button @click="doClose">Затвори</button>
     </div>
+
+    <PrintLayoutToolbar v-if="lay.editing.value" :lay="lay" :name="'Меѓународна дозвола — барање'" v-model:guides="guides" />
 
     <div v-if="loading" class="msg">Се вчитува…</div>
     <div v-else-if="error" class="msg err">{{ error }}</div>
 
     <template v-else-if="bundle">
-      <div v-for="pg in [1, 2]" :key="pg" class="page">
+      <div v-for="pg in [1, 2]" :key="pg" class="page"
+           :ref="(el) => { if (pg === 1) lay.setPageEl(el as HTMLElement | null); }"
+           :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+        <!-- underline rules (fixed) -->
         <div v-for="(u, i) in undFor(pg)" :key="'u' + i" class="u" :style="uStyle(u)"></div>
-        <div v-for="(it, i) in itemsFor(pg)" :key="'t' + i" class="t" :style="tStyle(it)">{{ it.t }}</div>
+        <!-- static form text (fixed) -->
+        <div v-for="(it, i) in staticsFor(pg)" :key="'s' + i" class="t" :style="tStyle(it)">{{ it.t }}</div>
+        <!-- bound VALUES (editable — position/size from saved layout) -->
+        <div v-for="f in dataFor(pg)" :key="f.k" class="t f" :class="{ sel: lay.selectedKey.value === f.k }"
+             :style="dStyle(f)" @pointerdown="lay.beginDrag(f.k, $event)">{{ dataValues[f.k] }}</div>
       </div>
     </template>
   </div>
@@ -207,6 +292,16 @@ function doClose() { window.close(); }
 }
 .t { position: absolute; white-space: nowrap; line-height: 1; }
 .u { position: absolute; height: 0; border-bottom: 0.2mm solid #000; }
+
+/* ---- Layout-edit affordances (screen only; only .f value fields are editable) ---- */
+.page.editing .f { cursor: move; outline: 1px dashed rgba(37,99,235,.4); outline-offset: 0; }
+.page.editing .f:hover { outline-color: rgba(37,99,235,.9); background: rgba(37,99,235,.06); }
+.page.editing .f.sel { outline: 1.5px solid #2563eb; background: rgba(37,99,235,.12); }
+.page.guides {
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0, transparent calc(10mm - 1px), rgba(37,99,235,.12) 10mm),
+    repeating-linear-gradient(90deg, transparent 0, transparent calc(10mm - 1px), rgba(37,99,235,.12) 10mm);
+}
 
 .msg { text-align: center; padding: 4rem 0; font-family: system-ui, sans-serif; }
 .err { color: #b91c1c; }
