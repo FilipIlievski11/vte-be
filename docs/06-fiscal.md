@@ -72,15 +72,31 @@ sb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
 
 This matches the legacy header exactly (`strSmetka &= " 01,0000,1"` / `" U1,0000,1"`).
 
-### 2.2 Line items (one per active bill line)
+### 2.2 Line items (one per payment CATEGORY — folded, like legacy)
 
-Each line is built as:
+The receipt does **not** print one line per bill line. Faithful to the legacy pipeline
+(`GetPaymentDocumentForFiscalPrintByIdDocument` SP + `PaymentDocumentFiscalPrintList.ContainsP/AddPrice`),
+the bill's active, non-`PrePaid` lines are **folded by payment-category name** into one receipt
+line per category:
+
+- **Source rows**: `PaymentDocumentLine` where `Active && !PrePaid`, ordered by `Id`, category
+  resolved `PriceCatalogId → PriceCatalog.PaymentCategoryGroupId → PaymentCategoryGroup.Name`
+  (legacy: `PaymentItemParametars → PaymentItems → PaymentCategories.CategoryName`). The joins are
+  INNER — a line whose category chain is broken silently drops out, exactly like the legacy SP.
+  Lines flagged `PrePaid` are excluded (legacy SP filter `PrePayed = 0`).
+- **Folding**: rows sharing the same category **name** (ordinal compare — per-company duplicate
+  category ids like 86/1086 merge, because legacy folded on the name string) collapse into one
+  entry. The first row contributes its raw price (`UnitPrice*Quantity`) and keeps its `Discount`
+  and `VatPercent`; every subsequent same-name row adds its raw price **pre-rounded through
+  `FicalRound`** (legacy `AddPrice(info.Price)` goes through the `Price` getter).
+
+Each folded entry emits:
 
 ```
-<marker><name (ToLat, Left 24)>\t<VAT-class byte><price F2>\r\n
+<marker><name (ToLat, Left 24)>\t<VAT-class byte><price>\r\n
 ```
 
-- **Marker — alternates per line index.** Even-indexed lines start with `'1`, odd-indexed lines
+- **Marker — alternates per folded index.** Even-indexed lines start with `'1`, odd-indexed lines
   start with `" 1"` (leading space). This is faithful to the legacy
   `If boDocument.IndexOf(item) Mod 2 = 0 Then "'1" Else " 1"`.
 
@@ -90,9 +106,9 @@ Each line is built as:
 
   The exact reason for the alternation lives in the driver; VTE only reproduces the legacy behavior.
 
-- **Name — `Left(ToLat(name), 24)`.** The price-catalog name (`PriceCatalog.Name`) is transliterated
-  Cyrillic→Latin by `ToLat` (§3) and then truncated to **24 characters** (`Left`). Legacy:
-  `Strings.Left(ToLat(payIteam.CategoryName), 24)`.
+- **Name — `Left(ToLat(name), 24)`.** The payment-category name (`PaymentCategoryGroup.Name`) is
+  transliterated Cyrillic→Latin by `ToLat` (§3) and then truncated to **24 characters** (`Left`).
+  Legacy: `Strings.Left(ToLat(payIteam.CategoryName), 24)` — also the category, via the catalog.
 
 - **TAB** separates the name from the VAT byte (`vbTab` in legacy, `'\t'` in v2).
 
@@ -107,38 +123,38 @@ Each line is built as:
   | other | — | — | **Refused** (see below) |
 
   ```csharp
-  var vatByte = l.VatPercent switch {
+  var vatByte = f.VatPercent switch {   // f = the folded entry; VAT comes from the category's FIRST row
       18 => (byte)192,
       5  => (byte)193,
       0  => (byte)194,
       _  => (byte)0,
   };
   if (vatByte == 0)
-      return BadRequest(new { error = $"Ставка со непозната ДДВ стапка ({l.VatPercent}%) — не може да се фискализира." });
+      return BadRequest(new { error = $"Ставка со непозната ДДВ стапка ({f.VatPercent}%) — не може да се фискализира." });
   ```
 
   > **Behavior difference vs. legacy.** The legacy code did `Exit For` on an unknown rate — it
   > *silently truncated* the receipt (dropping that line and every line after it). v2 **refuses
   > loudly** with a 400 so a mis-priced line can never produce a quietly-wrong fiscal receipt.
 
-- **Price — `F2` (two decimals, dot separator).** The unit price has the line discount applied and
-  is rounded to **whole denars** (legacy `Math.Round(..., 0)` semantics), then multiplied by
-  quantity, then formatted with `InvariantCulture` so the decimal separator is always `.`:
+- **Price — legacy `FicalRound` + banker's discount round, printed like VB `FormatNumber`.**
+  The folded sum goes through `FicalRound` (legacy `RoundHelper.FicalRound`, ported verbatim:
+  fraction pre-rounded to 2 decimals; `≤ 0.49` truncates, `> 0.49` rounds up — so `x.50` always
+  goes **up**, unlike banker's). The category's first-row discount is then applied and the result
+  rounded to whole denars with `Math.Round(..., 0)` (banker's — matches VB), and finally printed
+  via `FormatFiscal` — the exact `FormatNumber(x, 2, IncludeLeadingDigit:=False, GroupDigits:=False)
+  .Replace(",", ".")` replica (two decimals, dot separator, **values below 1 print without the
+  leading zero**: `0 → ".00"`):
 
   ```csharp
-  var price = Math.Round((double)l.UnitPrice * (1 - l.Discount / 100), 0) * l.Quantity;
-  sb.Append(... ).Append((char)vatByte)
-    .Append(price.ToString("F2", CultureInfo.InvariantCulture));
+  var p = FicalRound(f.Accum);
+  var price = Math.Round(p - p * f.Discount / 100, 0);
+  sb.Append(...).Append((char)vatByte).Append(FormatFiscal(price));
   ```
 
-  Legacy computed `cenaSoPopust = Math.Round(item.Price - (item.Price * item.Discount / 100), 0)`
-  and emitted `FormatNumber(...,2,...).Replace(",", ".")` — same result.
-
-  > **Rounding-order nuance.** The per-line *price* rounds the discounted unit price first and
-  > multiplies by quantity afterwards (`Round(UnitPrice*(1-disc),0) * Qty`), whereas the
-  > **zero-skip gate** in §4 rounds the whole `UnitPrice*Qty*(1-disc)` product per line
-  > (`Sum(Round(UnitPrice*Qty*(1-disc),0))`). The two agree for `Quantity = 1` (every line
-  > created by `CreateFromDebts` is `Quantity = 1`) but can differ for multi-quantity lines.
+  Legacy: `cenaSoPopust = Math.Round(item.Price - (item.Price * item.Discount / 100), 0)` where
+  `item.Price` is the `FicalRound`-ed folded sum — identical math, verified byte-for-byte against
+  100 real bills (see §10 verification note).
 
 A two-line example (names already transliterated, `‹TAB›` = `\t`, `‹A›` = byte 192):
 
@@ -242,8 +258,10 @@ var type = await _db.PaymentTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id =
 if (type is not { IsCash: true })
     return Ok(new FiscalFileDto(false, "Фискална сметка се печати само за готовинско плаќање.", "", "", doc.FiscalPrintedAt));
 ...
-var total = lines.Sum(l => Math.Round((double)l.UnitPrice * l.Quantity * (1 - l.Discount / 100), 0));
-if (lines.Count == 0 || total == 0)
+// Zero gate — legacy GetTotalAmmount over the FOLDED rows (FicalRound'ed price,
+// first-row discount, no whole-denar rounding at the gate).
+var total = folded.Sum(f => { var p = FicalRound(f.Accum); return p - p * f.Discount / 100; });
+if (folded.Count == 0 || total == 0)
     return Ok(new FiscalFileDto(false, "Сметката нема износ за фискализација.", "", "", doc.FiscalPrintedAt));
 ```
 
@@ -269,11 +287,14 @@ installment's paid amount:
 ```csharp
 rsb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
 rsb.Append("'1").Append("Uplata po rata").Append('\t').Append((char)194)
-   .Append(((double)(rata.PaidAmount ?? rata.Amount)).ToString("F2", CultureInfo.InvariantCulture))
+   .Append(FormatFiscal(FicalRound((double)(rata.PaidAmount ?? rata.Amount))))
    .Append("\r\n");
 rsb.Append(" 5 Smetka\t\r\n");
 rsb.Append(doc.Stornoed ? "%V" : "%8").Append("\r\n");
 ```
+
+The amount goes through `FicalRound` — the legacy rata BO's `Price` getter applies it too
+(`PaymentDocumentRataFiscalPrintInfo.Price → FicalRound(_price)`).
 
 Differences from the full-bill path:
 
@@ -464,6 +485,14 @@ What *can* be tested without the device:
   folder selection, permission, and atomic write work on a given PC.
 - The `FiscalPrintedAt` outbox marker round-trip.
 
+> **Byte-parity verification (2026-07-15).** The v2 composition was verified byte-for-byte against a
+> line-for-line simulation of the legacy VB pipeline (SP rows pulled from the LIVE legacy DB,
+> `ContainsP`/`AddPrice` folding, `FicalRound`, `FormatNumber`, legacy `ToLat`) on **100 real bills**
+> stratified across: plain multi-line, same-category folding, storno, bills with `PrePayed` lines,
+> discounts, fractional prices, single-line, and the untrimmed-name categories 135/1135. Result:
+> zero mismatches — the only accepted difference is legacy's CP1251 `А` byte (`0xC0`) where v2 emits
+> Latin `A` (`0x41`), same glyph on paper (legacy `ToLat`'s index-0 bug, deliberately fixed in v2).
+
 ---
 
 ## 11. File / endpoint reference
@@ -480,4 +509,4 @@ What *can* be tested without the device:
 | Print buttons (bill detail) | `frontend-v2/src/views/PaymentView.vue` |
 | Auto-print after bill | `frontend-v2/src/views/DashboardView.vue` |
 | Locale strings | `frontend-v2/src/locales/{mk,en}.ts` → `fiscal.*`, `nav.fiscal` |
-| Legacy parity reference | `WinApp/Hepers/FiskalModule.vb`, `VTE.Library/KondnaTastaturaModule.vb` (ToLat) |
+| Legacy parity reference | `WinApp/Hepers/FiskalModule.vb`, `VTE.Library/Payment/PaymentDocumentFiscalPrintList.vb` (fold), `VTE.Library/RoundHelper.vb` (FicalRound), `VTE.Library/KondnaTastaturaModule.vb` (ToLat), SP `GetPaymentDocumentForFiscalPrintByIdDocument` |

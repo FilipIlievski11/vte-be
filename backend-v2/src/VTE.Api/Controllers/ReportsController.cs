@@ -398,10 +398,11 @@ public class ReportsController : ControllerBase
     // ========================================================================
     public record KindRow(string Kind, int Vehicles, decimal Amount);
     public record CollectionPreviewDto(string From, string To, string CompanyName, string CategoryName,
-                                       int TotalVehicles, decimal TotalAmount, IReadOnlyList<KindRow> Rows);
+                                       int TotalVehicles, decimal TotalAmount, IReadOnlyList<KindRow> Rows,
+                                       string? CommunityName);
 
     private async Task<CollectionPreviewDto?> BuildCollectionPreviewAsync(
-        DateTime from, DateTime to, List<int> groupIds, CancellationToken ct)
+        DateTime from, DateTime to, List<int> groupIds, int? communityId, CancellationToken ct)
     {
         var fromDate = from.Date;
         var toDate = to.Date.AddDays(1);      // inclusive of the 'to' day (legacy: EndDate.AddDays(1))
@@ -425,6 +426,12 @@ public class ReportsController : ControllerBase
                   && t.PayedAmount
                   && l.Active && !l.PrePaid
                   && pc.PaymentCategoryGroupId != null && groupIds.Contains(pc.PaymentCategoryGroupId.Value)
+                  // Филтер по општина на КЛИЕНТОТ (relation → client → city → community).
+                  // Клиент без град нема општина — испаѓа само кога филтерот е активен.
+                  && (communityId == null || _db.ClientVehicleRelations.Any(r =>
+                          r.Id == d.CustomerVehicleRelationId
+                          && _db.Clients.Any(c => c.Id == r.ClientId && c.CityId != null
+                              && _db.Cities.Any(ci => ci.Id == c.CityId && ci.CommunityId == communityId))))
             select new { d.CustomerVehicleRelationId, l.UnitPrice, l.Quantity, l.Discount }).ToListAsync(ct);
 
         // relation → vehicle → вид на возило за наплата
@@ -467,19 +474,48 @@ public class ReportsController : ControllerBase
         var categoryName = await _db.PaymentCategoryGroups.AsNoTracking()
             .Where(g => g.Id == groupIds[0])
             .Select(g => g.Name).FirstOrDefaultAsync(ct) ?? "";
+        var communityName = communityId == null ? null
+            : await _db.Communities.AsNoTracking()
+                .Where(c => c.Id == communityId.Value)
+                .Select(c => c.Name).FirstOrDefaultAsync(ct);
 
         return new CollectionPreviewDto(
             fromDate.ToString("dd.MM.yyyy"), toDate.AddDays(-1).ToString("dd.MM.yyyy"),
             companyName, categoryName,
-            rows.Sum(r => r.Vehicles), rows.Sum(r => r.Amount), rows);
+            rows.Sum(r => r.Vehicles), rows.Sum(r => r.Amount), rows,
+            communityName);
+    }
+
+    public record CommunityOption(int Id, string Name);
+
+    /// <summary>Општини за кои постојат податоци — distinct општина на клиентите со
+    /// сметки. Ги полни опциите на филтерот; „сите" е подразбирано (без параметар).</summary>
+    [HttpGet("collection-communities")]
+    public async Task<ActionResult<IReadOnlyList<CommunityOption>>> CollectionCommunities(CancellationToken ct = default)
+    {
+        var ids = await (
+            from d in _db.PaymentDocuments.AsNoTracking()
+            join r in _db.ClientVehicleRelations.AsNoTracking() on d.CustomerVehicleRelationId equals r.Id
+            join c in _db.Clients.AsNoTracking() on r.ClientId equals c.Id
+            join ci in _db.Cities.AsNoTracking() on c.CityId equals ci.Id
+            where d.Active && ci.CommunityId > 0
+            select ci.CommunityId).Distinct().ToListAsync(ct);
+
+        var list = await _db.Communities.AsNoTracking()
+            .Where(x => ids.Contains(x.Id))
+            .OrderBy(x => x.Name)
+            .Select(x => new CommunityOption(x.Id, x.Name))
+            .ToListAsync(ct);
+        return Ok(list);
     }
 
     [HttpGet("collection-preview")]
     public async Task<ActionResult<CollectionPreviewDto>> CollectionPreview(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? categoryGroupIds = null, CancellationToken ct = default)
+        [FromQuery] string? categoryGroupIds = null,
+        [FromQuery] int? communityId = null, CancellationToken ct = default)
     {
-        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), ct);
+        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), communityId, ct);
         return dto == null ? BadRequest(new { error = "Невалиден период." }) : Ok(dto);
     }
 
@@ -487,9 +523,10 @@ public class ReportsController : ControllerBase
     public async Task<IActionResult> CollectionPreviewXlsx(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? categoryGroupIds = null,
-        [FromQuery] string? title = null, CancellationToken ct = default)
+        [FromQuery] string? title = null,
+        [FromQuery] int? communityId = null, CancellationToken ct = default)
     {
-        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), ct);
+        var dto = await BuildCollectionPreviewAsync(from, to, ParseGroupIds(categoryGroupIds), communityId, ct);
         if (dto == null) return BadRequest(new { error = "Невалиден период." });
         var catLabel = string.IsNullOrWhiteSpace(title) ? dto.CategoryName : title.Trim();
 
@@ -504,6 +541,11 @@ public class ReportsController : ControllerBase
             .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
         ws.Cell(4, 1).Value = $"Датум од: {dto.From}  до: {dto.To}";
         ws.Range(4, 1, 4, 3).Merge().Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+        if (!string.IsNullOrWhiteSpace(dto.CommunityName))
+        {
+            ws.Cell(5, 1).Value = $"Општина: {dto.CommunityName}";
+            ws.Range(5, 1, 5, 3).Merge().Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+        }
 
         string[] heads = ["Вид на возила", "Бр. на возила", "Наплатен износ"];
         const int headRow = 6;

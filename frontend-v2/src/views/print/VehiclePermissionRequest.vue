@@ -16,96 +16,161 @@ const error = ref<string | null>(null);
 const lay = usePrintLayout('perm-req', 210);
 const guides = ref(true);
 
-// ── Барање за издавање на одобрение за управување на туѓо моторно возило — plain A4
-// letter. Positions from legacy rptBaranjeZaOdobrenieZaTugoVozilo.Designer.vb
-// (ReportUnit = 1/100 inch → ×0.254mm). Arial 9.75pt bold; values UPPERCASE Cyrillic
-// (legacy OwnerDisplayCyr / CustomerDisplayCyr). ──
+// ── БАРАЊЕ за издавање на одобрение за управување со туѓо моторно возило во
+// странство — the official two-page table form. Geometry extracted from the live
+// legacy print (rptBaranjeZaOdobrenieZaTugoVozilo2.pdf): text baselines and cell
+// borders via pdfjs, PT→MM. Arial 9.75pt regular; captions 8pt; title 16pt.
+// Value tops = PDF baseline − 3.81mm (the cert-proven offset scaled 11.25→9.75pt). ──
 
-function up(s: string | null | undefined): string {
-  return (s ?? '').trim().toUpperCase();
-}
-function fmt(s: string | null | undefined): string {
+function fmtD(s: string | null | undefined): string {
   if (!s) return '';
   const d = new Date(s);
   if (isNaN(d.getTime())) return '';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getFullYear()}`;
+  return `${dd}-${mm}-${d.getFullYear()}`;
 }
+// Birthdates print with a two-digit year in legacy composites (15-01-81).
+function fmtY2(s: string | null | undefined): string {
+  const f = fmtD(s);
+  return f ? f.slice(0, 6) + f.slice(8) : '';
+}
+const dash = (parts: (string | null | undefined)[]) =>
+  parts.map((s) => (s ?? '').trim()).filter(Boolean).join(',');
 
-const IN = 0.254; // 1/100 inch → mm
-
-// Built-in default positions (mm) + font pt for the editable VALUE fields only.
-// Values were legacy ReportUnit (1/100 inch) × IN — kept as the SAME expressions so the
-// resolved default is numerically identical (byte-exact) to the fixed static coords.
-// Static labels / headers / signature underline are NOT here — they keep fixed coords.
+// Built-in default positions (mm from the PDF) + font pt for the editable VALUE fields.
 const DEF: Record<string, { x: number; y: number; size?: number }> = {
-  issuerOrg:          { x: 425 * IN, y: 50 * IN,  size: 9.75 },
-  submittedBy:        { x: 150 * IN, y: 250 * IN, size: 9.75 },
-  authorizedName:     { x: 225 * IN, y: 350 * IN, size: 9.75 },
-  authorizedAddress:  { x: 225 * IN, y: 400 * IN, size: 9.75 },
-  authorizedPassport: { x: 225 * IN, y: 450 * IN, size: 9.75 },
-  plateNumber:        { x: 225 * IN, y: 500 * IN, size: 9.75 },
-  ownerName:          { x: 225 * IN, y: 583 * IN, size: 9.75 },
+  issuerOrg:        { x: 32.3,  y: 63.7,  size: 9.75 },
+  userLine:         { x: 23.9,  y: 123.3, size: 9.75 },
+  ownerPersonLine:  { x: 42.9,  y: 147.4, size: 9.75 },
+  ownerCompanyLine: { x: 42.9,  y: 166.7, size: 9.75 },
+  passportNo:       { x: 148.3, y: 202.0, size: 9.75 },
+  plateNo:          { x: 80.9,  y: 208.4, size: 9.75 },
+  vehicleMake:      { x: 80.9,  y: 214.7, size: 9.75 },
+  trafficLicNo:     { x: 96.2,  y: 221.1, size: 9.75 },
+  issueDate:        { x: 54.4,  y: 226.2, size: 9.75 },
+  validTill:        { x: 54.4,  y: 232.6, size: 9.75 },
+  permSerial:       { x: 72.5,  y: 238.7, size: 9.75 },
+  cityAndDate:      { x: 15.6,  y: 115.9, size: 9.75 }, // page 2
 };
 lay.setDefaults(DEF);
 
-// (x, y, w, h) box in mm; label boxes are MiddleLeft, the two headers are centred.
-// k = stable key of an editable VALUE field (x/y/size come from lay.resolve); static
-// labels omit k and keep their fixed legacy coords.
-type F = { x: number; y: number; w: number; h: number; t: string; c?: 1; multi?: 1; k?: string };
+// Bordered cells of the form (static — cell borders + label text stay put).
+type Cell = { x: number; y: number; w: number; h: number; t?: string; c?: 1; size?: number; lines?: string[] };
+const CELLS1: Cell[] = [
+  { x: 30.8, y: 51.2, w: 82.6, h: 4.6, t: 'РЕПУБЛИКА СЕВЕРНА МАКЕДОНИЈА' },
+  { x: 30.8, y: 55.8, w: 159.3, h: 8.6, lines: ['МИНИСТЕРСТВО ЗА ВНАТРЕШНИ РАБОТИ / правно лице за вршење на технички', 'преглед на возила'] },
+  { x: 30.8, y: 64.4, w: 78.4, h: 4.7 },                                             // issuer org (value field)
+  { x: 88.6, y: 91.5, w: 29.4, h: 6.8, t: 'БАРАЊЕ', c: 1, size: 16 },
+  { x: 61.3, y: 113.5, w: 76.8, h: 4.6, t: '(да се пополни читливо со печатни букви)', c: 1 },
+  { x: 14.3, y: 123.6, w: 9.1, h: 4.6, t: 'Од:' },
+  { x: 14.3, y: 140.4, w: 127.3, h: 4.6, t: 'Податоци за сопственикот на возилото:' },
+  { x: 14.3, y: 148.1, w: 28.1, h: 4.6, t: 'Физичко лице:' },
+  { x: 14.3, y: 167.4, w: 28.1, h: 4.5, t: 'Правно лице:' },
+  { x: 14.3, y: 182.5, w: 121.3, h: 6.4, t: 'Во прилог кој барањето се поднесуваат:' },
+  { x: 14.3, y: 188.9, w: 94.9, h: 6.3, t: '1. Важечка лична карта на сопственикот на возилото' },
+  { x: 109.2, y: 188.9, w: 46.2, h: 6.3 },
+  { x: 14.3, y: 195.2, w: 94.9, h: 6.4, t: '2. Овластување од правното лице' },
+  { x: 14.0, y: 201.6, w: 133.5, h: 6.3, t: '3. Важечка патна исправа на корисникот (лична карта/пасош број)' },
+  { x: 147.8, y: 201.6, w: 46.3, h: 6.3 },
+  { x: 14.0, y: 207.9, w: 66.0, h: 6.4, t: '4. Регистарски таблици на возилото' },
+  { x: 80.4, y: 207.9, w: 67.4, h: 6.4 },
+  { x: 14.3, y: 214.3, w: 66.1, h: 6.3, t: '5. Марка и тип на возилото' },
+  { x: 80.4, y: 214.3, w: 57.7, h: 6.3 },
+  { x: 14.3, y: 220.6, w: 81.4, h: 6.3, t: '6. Сериски број на сообраќајната дозвола' },
+  { x: 95.7, y: 220.6, w: 45.9, h: 6.4 },
+  { x: 14.3, y: 227.0, w: 39.6, h: 6.3, t: '7. Датум на издавање' },
+  { x: 53.9, y: 226.9, w: 37.2, h: 4.9 },
+  { x: 14.3, y: 233.3, w: 39.6, h: 6.4, t: '8. Период на важење' },
+  { x: 53.9, y: 233.3, w: 37.2, h: 4.8 },
+  { x: 14.3, y: 239.7, w: 57.4, h: 6.3, t: '9. Сериски број на одобрението' },
+  { x: 72.0, y: 239.4, w: 37.2, h: 4.9 },
+];
+const CELLS2: Cell[] = [
+  { x: 14.3, y: 42.5, w: 65.7, h: 6.3, t: 'Потпис на сопственик на возилото' },
+  { x: 80.0, y: 42.5, w: 44.2, h: 6.3 },
+  { x: 14.3, y: 48.8, w: 65.7, h: 6.4, t: 'Потпис на корисни на возилото' },
+  { x: 80.0, y: 48.8, w: 44.2, h: 6.4 },
+  { x: 85.1, y: 69.5, w: 62.4, h: 4.5, t: 'Потпис на овластено правно лице' },
+  { x: 141.6, y: 77.1, w: 31.0, h: 4.6, t: 'М.П.' },
+  { x: 15.1, y: 116.6, w: 57.1, h: 4.5 },                                            // место, датум (value field)
+  { x: 72.2, y: 116.6, w: 27.3, h: 4.5, t: 'година' },
+];
 
-const fields = computed<F[]>(() => {
+// Plain (borderless) static texts. y = top (baseline − 3.11mm at 9.75pt / 2.55mm at 8pt).
+type Txt = { x: number; y: number; t: string; size?: number; w?: number; c?: 1; lh?: number };
+const TXT1: Txt[] = [
+  { x: 14, y: 101.9, w: 187.5, c: 1, lh: 3.95, t: 'ЗА ИЗДАВАЊЕ НА ОДОБРЕНИЕ ЗА УПРАВУВАЊЕ СО ТУЃО МОТОРНО ВОЗИЛО ВО\nСТРАНСТВО' },
+  { x: 22.3, y: 128.9, size: 8, t: '(име, презиме, место на раѓање, датум на раѓање,место на живеење, матичен број и важечка лична карта и орган кој ја издал и' },
+  { x: 88.4, y: 132.1, size: 8, t: 'адреса на законски престој)' },
+  { x: 47.0, y: 153.4, size: 8, t: '(име, презиме, место на раѓање, датум на раѓање,место на живеење, лична карта, сообраќајна дозвола од возилото и' },
+  { x: 116.3, y: 156.6, size: 8, t: 'матичен број)' },
+  { x: 62.4, y: 172.3, size: 8, t: 'назив на правното лице, седиште, матичен број на субјектот, цообраќајна дозвола од возилото' },
+];
+const TXT2: Txt[] = [
+  { x: 17.0, y: 90.4, t: 'За точноста на податоците одговарам лично и материјално, а за сите грешки во податоците' },
+  { x: 17.0, y: 94.4, t: 'согласен/на сум да ги сносам последиците.' },
+  { x: 15.6, y: 137.1, t: '*ЗАБЕЛЕШКА: За странец одобрението за управување со туѓо моторно возило во странство се однесува само' },
+  { x: 15.6, y: 141.1, t: 'за М1 категорија, согласно член 317 став (7) од законот за безбедност на сообраќајот на патиштата ("Службен' },
+  { x: 15.6, y: 145.0, t: 'весник на Република Северна Македонија" бр. 169/15, 226/15 и 55/16)' },
+];
+// Standalone rules (signature line + the underlined liability sentence).
+const LINES2 = [
+  { x: 147.5, y: 69.5, w: 53.2 },
+  { x: 17.0, y: 93.9, w: 158.7 },
+  { x: 17.0, y: 97.8, w: 74.9 },
+];
+
+// ---- Value fields (draggable) ----
+type V = { k: string; t: string; page: 1 | 2 };
+const values = computed<V[]>(() => {
   const b = bundle.value;
   if (!b) return [];
+  const business = b.ownerIsBusiness === true;
   return [
-    { x: 521 * IN, y: 17 * IN, w: 60, h: 25 * IN, t: 'До' },
-    { x: 425 * IN, y: 50 * IN, w: 217 * IN, h: 58 * IN, t: b.issuerOrgName ?? b.companyName ?? '', c: 1, multi: 1, k: 'issuerOrg' },
-    { x: 183 * IN, y: 150 * IN, w: 283 * IN, h: 58 * IN, t: 'БАРАЊЕ за издавање на одобрение за управување на туѓо моторно возило', c: 1, multi: 1 },
-    { x: 25 * IN,  y: 250 * IN, w: 117 * IN, h: 25 * IN, t: 'Поднесено од:' },
-    { x: 150 * IN, y: 250 * IN, w: 492 * IN, h: 25 * IN, t: up(b.ownerName), k: 'submittedBy' },
-    { x: 25 * IN,  y: 292 * IN, w: 617 * IN, h: 25 * IN, t: 'Бараме да се издаде одобрение за управување на туѓо моторно возило' },
-    { x: 25 * IN,  y: 350 * IN, w: 100 * IN, h: 25 * IN, t: 'За лицето' },
-    { x: 225 * IN, y: 350 * IN, w: 417 * IN, h: 25 * IN, t: up(b.authorizedName), k: 'authorizedName' },
-    { x: 25 * IN,  y: 400 * IN, w: 167 * IN, h: 25 * IN, t: 'Со адреса на живеење' },
-    { x: 225 * IN, y: 400 * IN, w: 417 * IN, h: 25 * IN, t: up(b.authorizedAddress), k: 'authorizedAddress' },
-    { x: 25 * IN,  y: 450 * IN, w: 125 * IN, h: 25 * IN, t: 'Број на пасош' },
-    { x: 225 * IN, y: 450 * IN, w: 417 * IN, h: 25 * IN, t: b.authorizedPassportNumber ?? b.authorizedIdCardNumber ?? '', k: 'authorizedPassport' },
-    { x: 25 * IN,  y: 500 * IN, w: 200 * IN, h: 25 * IN, t: 'Регистерски број на возило' },
-    { x: 225 * IN, y: 500 * IN, w: 417 * IN, h: 25 * IN, t: b.plateNumber ?? '', k: 'plateNumber' },
-    { x: 25 * IN,  y: 583 * IN, w: 200 * IN, h: 25 * IN, t: 'Возилото е сопственост на' },
-    { x: 225 * IN, y: 583 * IN, w: 417 * IN, h: 25 * IN, t: up(b.ownerName), k: 'ownerName' },
-    { x: 25 * IN,  y: 658 * IN, w: 175 * IN, h: 25 * IN, t: 'Однапред Ви благодариме' },
-    { x: 483 * IN, y: 725 * IN, w: 92 * IN, h: 25 * IN, t: 'Барател' },
+    { k: 'issuerOrg', page: 1, t: b.issuerOrgName ?? b.companyName ?? '' },
+    { k: 'userLine', page: 1, t: dash([b.authorizedName, b.authorizedBirthCityName, fmtY2(b.authorizedDateOfBirth), b.authorizedLivingCityName, b.authorizedEmbg, b.authorizedIdCardNumber || b.authorizedPassportNumber, b.authorizedAddress]) },
+    { k: 'ownerPersonLine', page: 1, t: business ? '' : dash([b.ownerName, b.ownerBirthCityName, fmtY2(b.ownerDateOfBirth), b.ownerLivingCityName, b.trafficLicenceNumber, b.ownerIdNumber]) },
+    { k: 'ownerCompanyLine', page: 1, t: business ? dash([b.ownerName, b.ownerAddress, b.ownerIdNumber, b.trafficLicenceNumber]) : '' },
+    { k: 'passportNo', page: 1, t: b.authorizedIdCardNumber || b.authorizedPassportNumber || '' },
+    { k: 'plateNo', page: 1, t: b.plateNumber ?? '' },
+    { k: 'vehicleMake', page: 1, t: b.vehicleDisplay ?? '' },
+    { k: 'trafficLicNo', page: 1, t: b.trafficLicenceNumber ?? '' },
+    { k: 'issueDate', page: 1, t: fmtD(b.issuedDate) },
+    { k: 'validTill', page: 1, t: fmtD(b.validTillDate) },
+    { k: 'permSerial', page: 1, t: String(b.id) },
+    { k: 'cityAndDate', page: 2, t: `${b.issuingCityName ?? ''}, ${fmtD(b.issuedDate)}` },
   ];
 });
-// signature line (static)
-const line = { x: 425 * IN, y: 772 * IN, w: 200 * IN };
 
-function fStyle(f: F) {
-  const align = f.c ? 'center' : 'left';
-  const wrap = f.multi ? 'normal' : 'nowrap';
-  const lh = f.multi ? '1.25' : `${f.h}mm`;
-  // Only VALUE fields (with a key) take x/y/size from the saved-layout resolver;
-  // statics keep their fixed coords. w/h/align/wrap always stay template-driven.
-  let x = f.x, y = f.y, size = '';
-  if (f.k) {
-    const p = lay.resolve(f.k);
-    x = p.x; y = p.y; size = ` font-size:${p.size}pt;`;
-  }
-  return `left:${x.toFixed(2)}mm; top:${y.toFixed(2)}mm; width:${f.w.toFixed(2)}mm; min-height:${f.h.toFixed(2)}mm; line-height:${lh}; text-align:${align}; white-space:${wrap};${size}`;
+function cellStyle(c: Cell) {
+  const size = c.size ?? 9.75;
+  const lh = c.lines ? '3.95mm' : `${(c.h - 0.44).toFixed(2)}mm`;
+  return `left:${c.x}mm; top:${c.y}mm; width:${c.w}mm; height:${c.h}mm; font-size:${size}pt; line-height:${lh}; text-align:${c.c ? 'center' : 'left'};`;
+}
+function txtStyle(t: Txt) {
+  const size = t.size ?? 9.75;
+  const w = t.w != null ? `width:${t.w}mm; ` : '';
+  const lh = t.lh != null ? `${t.lh}mm` : '1';
+  return `left:${t.x}mm; top:${t.y}mm; ${w}font-size:${size}pt; line-height:${lh}; text-align:${t.c ? 'center' : 'left'};`;
+}
+function vStyle(k: string) {
+  const p = lay.resolve(k);
+  return `left:${p.x.toFixed(2)}mm; top:${p.y.toFixed(2)}mm; height:5.6mm; line-height:5.6mm; font-size:${p.size}pt;`;
 }
 
 // Representative sample used in layout-edit mode (no real record needed).
 const SAMPLE: VehiclePermissionPrint = {
-  id: 1, permissionNumber: '123/2026', trafficLicenceNumber: 'СА1234567', triptiqueNumber: null,
-  issuedDate: '2026-07-10', startDate: '2026-07-10', validTillDate: '2027-07-10', note: null,
-  ownerName: 'Петар Петровски', ownerIdNumber: '1234567890123', ownerAddress: 'ул. Македонија бр.10, Скопје',
-  authorizedName: 'Марко Марковски', authorizedEmbg: '3210987654321', authorizedIdCardNumber: 'А1234567',
-  authorizedPassportNumber: 'МК1234567', authorizedAddress: 'ул. Партизанска бр.5, Битола',
-  vehicleDisplay: 'ФОЛКСВАГЕН ГОЛФ', plateNumber: 'SK-1234-AB', vehicleVin: 'WVWZZZ1KZAW000000',
-  vehicleEngineNumber: 'ABC123456', issuerName: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ', issuingCityName: 'Велес',
-  issuerOrgName: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ ВЕЛЕС', companyName: 'АВТО-БЕЗБЕДНОСТ МНС',
+  id: 4476, permissionNumber: '123/2026', trafficLicenceNumber: '1805799', triptiqueNumber: null,
+  issuedDate: '2026-07-15', startDate: '2026-07-15', validTillDate: '2027-07-15', note: null,
+  ownerName: 'ДПГТУ ПЕСКАРА-ВЕЛ ДООЕЛ', ownerIdNumber: '5508495', ownerAddress: 'Академик Пенчо Давчев 128 Велес',
+  authorizedName: 'САШКО МАНЕВ', authorizedEmbg: '1501981480042', authorizedIdCardNumber: 'М1140928',
+  authorizedPassportNumber: null, authorizedAddress: 'Мицко Козар 20',
+  vehicleDisplay: 'VOLKSWAGEN GOLF 1.6 TDI', plateNumber: 'VE 3414 AC', vehicleVin: 'WVWZZZ1KZAW000000',
+  vehicleEngineNumber: 'ABC123456', issuerName: 'МВР Велес', issuingCityName: 'Велес',
+  issuerOrgName: 'АВТО-БЕЗБЕДНОСТ МНС ДООЕЛ Велес', companyName: 'АВТО-БЕЗБЕДНОСТ МНС',
+  ownerIsBusiness: true, ownerBirthCityName: null, ownerDateOfBirth: null, ownerLivingCityName: null,
+  authorizedBirthCityName: 'ВЕЛЕС', authorizedDateOfBirth: '1981-01-15', authorizedLivingCityName: 'Велес',
 };
 
 onMounted(async () => {
@@ -132,7 +197,6 @@ function doClose() { window.close(); }
 
 <template>
   <div class="screen">
-    <!-- toolbar BEFORE the page so .page:last-of-type matches (no blank extra sheet) -->
     <div v-if="!lay.editing.value" class="toolbar no-print">
       <button @click="doPrint">Печати</button>
       <button @click="doClose">Затвори</button>
@@ -143,15 +207,32 @@ function doClose() { window.close(); }
     <div v-if="loading" class="msg">Се вчитува…</div>
     <div v-else-if="error" class="msg err">{{ error }}</div>
 
-    <div v-else-if="bundle" class="page" :ref="(el) => lay.setPageEl(el as HTMLElement | null)"
-         :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
-      <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
-      <div v-for="(f, i) in fields" :key="i" class="t"
-           :class="{ ed: !!f.k, sel: lay.selectedKey.value === f.k }"
-           :style="fStyle(f)"
-           @pointerdown="f.k && lay.beginDrag(f.k, $event)">{{ f.t }}</div>
-      <div class="u" :style="`left:${line.x.toFixed(2)}mm; top:${line.y.toFixed(2)}mm; width:${line.w.toFixed(2)}mm;`"></div>
-    </div>
+    <template v-else-if="bundle">
+      <!-- PAGE 1 -->
+      <div class="page" :ref="(el) => lay.setPageEl(el as HTMLElement | null)"
+           :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+        <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+        <div v-for="(c, i) in CELLS1" :key="'c' + i" class="cell" :style="cellStyle(c)">
+          <template v-if="c.lines"><div v-for="(l, j) in c.lines" :key="j">{{ l }}</div></template>
+          <template v-else>{{ c.t ?? '' }}</template>
+        </div>
+        <div v-for="(t, i) in TXT1" :key="'t' + i" class="txt" :style="txtStyle(t)">{{ t.t }}</div>
+        <div v-for="v in values.filter((x) => x.page === 1)" :key="v.k" class="val ed"
+             :class="{ sel: lay.selectedKey.value === v.k }" :style="vStyle(v.k)"
+             @pointerdown="lay.beginDrag(v.k, $event)">{{ v.t }}</div>
+      </div>
+
+      <!-- PAGE 2 -->
+      <div class="page" :class="{ editing: lay.editing.value, guides: lay.editing.value && guides }">
+        <PrintRulers v-if="lay.editing.value" :pos="lay.selectedPos.value" :width-mm="210" :height-mm="297" />
+        <div v-for="(c, i) in CELLS2" :key="'c' + i" class="cell" :style="cellStyle(c)">{{ c.t ?? '' }}</div>
+        <div v-for="(t, i) in TXT2" :key="'t' + i" class="txt" :style="txtStyle(t)">{{ t.t }}</div>
+        <div v-for="(l, i) in LINES2" :key="'l' + i" class="u" :style="`left:${l.x}mm; top:${l.y}mm; width:${l.w}mm;`"></div>
+        <div v-for="v in values.filter((x) => x.page === 2)" :key="v.k" class="val ed"
+             :class="{ sel: lay.selectedKey.value === v.k }" :style="vStyle(v.k)"
+             @pointerdown="lay.beginDrag(v.k, $event)">{{ v.t }}</div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -160,19 +241,24 @@ function doClose() { window.close(); }
 .page {
   position: relative;
   width: 210mm; height: 297mm;
-  margin: 0 auto; background: #fff; color: #000;
+  margin: 0 auto 8mm; background: #fff; color: #000;
   font-family: Arial, "Helvetica Neue", sans-serif;
-  font-weight: 700; font-size: 9.75pt;
+  font-weight: 400; font-size: 9.75pt;
   box-shadow: 0 0 10px rgba(0, 0, 0, .2);
   overflow: hidden;
 }
-.t { position: absolute; }
-.u { position: absolute; height: 0; border-bottom: 0.3mm solid #000; }
+.cell {
+  position: absolute; border: 0.22mm solid #000; box-sizing: border-box;
+  padding-left: 0.5mm; white-space: nowrap; overflow: visible;
+}
+.txt { position: absolute; white-space: pre; }
+.val { position: absolute; white-space: nowrap; }
+.u { position: absolute; height: 0; border-bottom: 0.25mm solid #000; }
 
 /* ---- Layout-edit affordances (screen only); only VALUE fields (.ed) are movable ---- */
-.page.editing .t.ed { cursor: move; outline: 1px dashed rgba(37,99,235,.4); outline-offset: 0; }
-.page.editing .t.ed:hover { outline-color: rgba(37,99,235,.9); background: rgba(37,99,235,.06); }
-.page.editing .t.ed.sel { outline: 1.5px solid #2563eb; background: rgba(37,99,235,.12); }
+.page.editing .val.ed { cursor: move; outline: 1px dashed rgba(37,99,235,.4); outline-offset: 0; }
+.page.editing .val.ed:hover { outline-color: rgba(37,99,235,.9); background: rgba(37,99,235,.06); }
+.page.editing .val.ed.sel { outline: 1.5px solid #2563eb; background: rgba(37,99,235,.12); }
 .page.guides {
   background-image:
     repeating-linear-gradient(0deg, transparent 0, transparent calc(10mm - 1px), rgba(37,99,235,.12) 10mm),
@@ -186,7 +272,8 @@ function doClose() { window.close(); }
 
 @media print {
   .screen { background: #fff; padding: 0; min-height: auto; }
-  .page { margin: 0; box-shadow: none; overflow: visible; }
+  .page { margin: 0; box-shadow: none; overflow: visible; break-after: page; }
+  .page:last-of-type { break-after: auto; }
   .no-print { display: none !important; }
   @page { size: A4 portrait; margin: 0; }
 }

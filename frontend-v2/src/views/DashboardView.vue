@@ -29,6 +29,8 @@ const confirm = useConfirm();
 
 const recentOpen = ref<RequestListItem[]>([]);
 const recentExams = ref<TechExamListItem[]>([]);
+const requestsToday = ref(0);      // денешни барања (KPI)
+const examsPassedToday = ref(0);   // денешни исправни технички прегледи (KPI)
 const debts = ref<CustomerDebtRow[]>([]);
 const debtCount = ref(0);
 const debtTotal = ref(0);
@@ -79,6 +81,16 @@ const debtGroups = computed<DebtClientGroup[]>(() => {
   // doesn't make it vanish), but a fully-settled client (all paid) drops off entirely.
   return out.filter(g => g.unpaidCount > 0);
 });
+
+// Стандардните авто-забелешки → кликабилен чип што води до изворот (преглед/барање).
+function noteRef(note: string | null): { icon: string; label: string; to: string } | null {
+  const s = (note ?? '').trim();
+  let m = s.match(/^по\s+технички\s+преглед\s+бр\.?\s*(\d+)$/i);
+  if (m) return { icon: 'pi pi-clipboard', label: t('dashboard.naplata.noteExam', { n: m[1] }), to: `/technical-exams/${m[1]}` };
+  m = s.match(/^по\s+барање\s+бр\.?\s*(\d+)$/i);
+  if (m) return { icon: 'pi pi-file-edit', label: t('dashboard.naplata.noteRequest', { n: m[1] }), to: `/requests/${m[1]}` };
+  return null;
+}
 
 async function refreshDebts() {
   try {
@@ -248,6 +260,40 @@ async function deleteSelectedDebts() {
   });
 }
 
+// --- Inline уредување на цена на долг (панел + дијалог) — легаси гридот го дозволуваше ---
+const editDebtId = ref<number | null>(null);
+const editDebtPrice = ref<number | null>(null);
+const savingDebtPrice = ref(false);
+function beginEditDebt(r: CustomerDebtRow) {
+  if (r.paid) return;
+  editDebtId.value = r.id;
+  editDebtPrice.value = r.price;
+}
+function cancelEditDebt() { editDebtId.value = null; editDebtPrice.value = null; }
+async function saveDebtPrice() {
+  if (editDebtId.value == null || editDebtPrice.value == null || savingDebtPrice.value) return;
+  savingDebtPrice.value = true;
+  try {
+    await api.put(`/customer-debts/${editDebtId.value}/price`, { price: editDebtPrice.value });
+    cancelEditDebt();
+    await Promise.all([refreshDebts(), detailVisible.value ? refreshDetail() : Promise.resolve()]);
+    toast.add({ severity: 'success', summary: t('payments.priceSaved'), life: 2000 });
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('payments.priceSaveFailed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 4000 });
+  } finally { savingDebtPrice.value = false; }
+}
+
+// Изведени такси (Закон за БСП, чл. 374 ст. 1): советските групи → процентуална основа.
+const DERIVATION_GROUPS: Record<number, string> = {
+  27: 'sovetTp', 63: 'sovetTp', 1063: 'sovetTp',   // 1,5% од технички преглед
+  86: 'sovetPt', 1086: 'sovetPt',                  // 1% од патна такса
+};
+function derivationLabel(r: CustomerDebtRow): string | null {
+  const key = r.paymentCategoryGroupId != null ? DERIVATION_GROUPS[r.paymentCategoryGroupId] : undefined;
+  return key ? t(`dashboard.naplata.derivation.${key}`) : null;
+}
+
 // --- Детали на сметка (per-client account detail: view / add / delete ставки) ---
 const detailVisible = ref(false);
 const detailGroup = ref<DebtClientGroup | null>(null);
@@ -326,7 +372,7 @@ async function addDetailItem() {
 
 function deleteDetailRow(r: CustomerDebtRow) {
   confirm.require({
-    message: t('dashboard.naplata.deleteConfirm', { service: r.priceCatalogName ?? '—', price: fmtMoney(r.price) }),
+    message: t('dashboard.naplata.deleteConfirm', { service: r.composedName ?? r.priceCatalogName ?? '—', price: fmtMoney(r.price) }),
     header:  t('common.confirmDelete'),
     icon:    'pi pi-exclamation-triangle',
     rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
@@ -361,8 +407,13 @@ function fmtDate(s: string | null): string {
 
 // Build the request-type tree (hierarchy via parentRequestTypeId), mirroring the
 // legacy Контролна табла tree: 3 roots, expanded; nodes coloured by print form.
+// БЕЛ образец (documentPrintId 3) — регистрационен лист. Скриен од операторите:
+// белите барања остануваат во базата (постоечките записи и админ-екранот и понатаму
+// ги гледаат), но не се нудат за креирање ново барање.
+const BEL_PRINT_ID = 3;
+
 function buildReqTree(types: RequestType[]) {
-  const active = types.filter(t => t.active);
+  const active = types.filter(t => t.active && t.documentPrintId !== BEL_PRINT_ID);
   const byParent = new Map<number | null, RequestType[]>();
   for (const ty of active) {
     const p = ty.parentRequestTypeId ?? null;
@@ -397,18 +448,25 @@ onUnmounted(() => document.removeEventListener('visibilitychange', onVisible));
 
 onMounted(async () => {
   try {
-    const [types, openReq, exams] = await Promise.all([
+    // Дневните бројки се сметаат од локална полноќ на операторот (серверот е UTC).
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const [types, openReq, exams, stats] = await Promise.all([
       api.get<RequestType[]>('/request-types', { params: { activeOnly: true } })
         .catch(() => ({ data: [] as RequestType[] })),
       api.get<Paged<RequestListItem>>('/requests', { params: { status: 'open', pageSize: 5 } })
         .catch(() => ({ data: { items: [], total: 0, page: 1, pageSize: 5 } as Paged<RequestListItem> })),
       api.get<Paged<TechExamListItem>>('/technical-exams', { params: { sort: 'made', dir: 'desc', pageSize: 5 } })
         .catch(() => ({ data: { items: [], total: 0, page: 1, pageSize: 5 } as Paged<TechExamListItem> })),
+      api.get<{ requestsToday: number; examsPassedToday: number }>('/dashboard/stats', { params: { from: todayIso } })
+        .catch(() => ({ data: { requestsToday: 0, examsPassedToday: 0 } })),
       refreshDebts(),
     ]);
     buildReqTree(types.data ?? []);
     recentOpen.value = openReq.data.items ?? [];
     recentExams.value = exams.data.items ?? [];
+    requestsToday.value = stats.data.requestsToday ?? 0;
+    examsPassedToday.value = stats.data.examsPassedToday ?? 0;
   } finally {
     loading.value = false;
   }
@@ -421,43 +479,92 @@ onMounted(async () => {
       <h1>{{ t('dashboard.welcome', { name: auth.fullName ?? auth.userName }) }}</h1>
       <div class="subtitle">{{ t('dashboard.role', { roles: rolesText }) }}</div>
     </div>
-    <div class="dash-shortcuts">
-      <Button :label="t('dashboard.newIdl')" icon="pi pi-id-card" size="small" outlined
-              @click="router.push('/international-driving-licences/new')" />
-      <Button :label="t('dashboard.newPermission')" icon="pi pi-file-check" size="small" outlined
-              @click="router.push('/vehicle-permissions/new')" />
+  </div>
+
+  <!-- KPI лента: брз пулс на станицата -->
+  <div class="stat-strip">
+    <div class="stat-tile clickable-tile" @click="router.push('/requests')">
+      <div class="stat-ico si-blue"><i class="pi pi-file-edit" /></div>
+      <div class="stat-body">
+        <div class="stat-val">{{ requestsToday }}</div>
+        <div class="stat-label">{{ t('dashboard.stats.requestsToday') }}</div>
+      </div>
+    </div>
+    <div class="stat-tile clickable-tile" @click="router.push('/technical-exams')">
+      <div class="stat-ico si-amber"><i class="pi pi-clipboard" /></div>
+      <div class="stat-body">
+        <div class="stat-val">{{ examsPassedToday }}</div>
+        <div class="stat-label">{{ t('dashboard.stats.examsPassedToday') }}</div>
+      </div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-ico si-green"><i class="pi pi-money-bill" /></div>
+      <div class="stat-body">
+        <div class="stat-val">{{ fmtMoney(debtTotal) }} <span class="stat-unit">ден.</span></div>
+        <div class="stat-label">{{ t('dashboard.stats.debtTotal') }}</div>
+      </div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-ico si-violet"><i class="pi pi-users" /></div>
+      <div class="stat-body">
+        <div class="stat-val">{{ debtGroups.length }}</div>
+        <div class="stat-label">{{ t('dashboard.stats.debtClients') }}</div>
+      </div>
     </div>
   </div>
 
-  <!-- Top row: create-request tree + pending bills -->
-  <div class="dash-top-grid">
-    <!-- Create request by type (legacy Контролна табла tree) -->
-    <div class="recent-card req-card">
-      <div class="recent-header">
-        <h2>{{ t('dashboard.createRequest.title') }}</h2>
-        <RouterLink to="/requests/new" class="all-link">{{ t('dashboard.createRequest.blank') }} →</RouterLink>
+  <!-- Main: лева колона (ново барање + брзи акции) | Наплата -->
+  <div class="dash-main-grid">
+    <div class="dash-side">
+      <!-- Create request by type (legacy Контролна табла tree) -->
+      <div class="recent-card req-card">
+        <div class="recent-header">
+          <h2>{{ t('dashboard.createRequest.title') }}</h2>
+          <RouterLink to="/requests/new" class="all-link">{{ t('dashboard.createRequest.blank') }} →</RouterLink>
+        </div>
+        <Tree
+          v-if="reqTree.length"
+          :value="reqTree"
+          v-model:expandedKeys="expandedKeys"
+          class="req-tree"
+        >
+          <template #default="{ node }">
+            <a
+              href="#"
+              class="req-link"
+              :class="printClass(node.data?.documentPrintId)"
+              @click.prevent.stop="createRequest(node.data.id)"
+              v-tooltip.right="t('dashboard.createRequest.tip')"
+            >
+              <span class="pf-dot" />
+              <span class="req-label">{{ node.label }}</span>
+            </a>
+          </template>
+        </Tree>
+        <div v-else-if="loading" class="empty"><i class="pi pi-spin pi-spinner" /></div>
+        <div v-else class="empty"><i class="pi pi-inbox" /><span>{{ t('dashboard.createRequest.empty') }}</span></div>
       </div>
-      <Tree
-        v-if="reqTree.length"
-        :value="reqTree"
-        v-model:expandedKeys="expandedKeys"
-        class="req-tree"
-      >
-        <template #default="{ node }">
-          <a
-            href="#"
-            class="req-link"
-            :class="printClass(node.data?.documentPrintId)"
-            @click.prevent.stop="createRequest(node.data.id)"
-            v-tooltip.right="t('dashboard.createRequest.tip')"
-          >
-            <span class="pf-dot" />
-            <span class="req-label">{{ node.label }}</span>
-          </a>
-        </template>
-      </Tree>
-      <div v-else-if="loading" class="empty"><i class="pi pi-spin pi-spinner" /></div>
-      <div v-else class="empty"><i class="pi pi-inbox" /><span>{{ t('dashboard.createRequest.empty') }}</span></div>
+
+      <!-- Брзи акции — ги полни празнината под дрвото со реални кратенки -->
+      <div class="recent-card shortcuts-card">
+        <div class="recent-header">
+          <h2>{{ t('dashboard.shortcuts.title') }}</h2>
+        </div>
+        <div class="shortcut-grid">
+          <button class="shortcut" @click="router.push('/international-driving-licences/new')">
+            <i class="pi pi-id-card" /><span>{{ t('dashboard.newIdl') }}</span>
+          </button>
+          <button class="shortcut" @click="router.push('/vehicle-permissions/new')">
+            <i class="pi pi-file-check" /><span>{{ t('dashboard.newPermission') }}</span>
+          </button>
+          <button class="shortcut" @click="router.push('/clients/new')">
+            <i class="pi pi-user-plus" /><span>{{ t('dashboard.shortcuts.newClient') }}</span>
+          </button>
+          <button class="shortcut" @click="router.push('/vehicles/new')">
+            <i class="pi pi-car" /><span>{{ t('dashboard.shortcuts.newVehicle') }}</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Наплата — open customer debts grouped by client → vehicle (legacy CustomerFinancialState) -->
@@ -468,20 +575,6 @@ onMounted(async () => {
           <span v-if="debtCount" class="count-pill">{{ debtCount }}</span>
         </h2>
         <div class="naplata-actions">
-          <Button
-            v-if="selectedDebtIds.size > 0"
-            :label="t('dashboard.naplata.makeBill', { n: selectedDebtIds.size })"
-            icon="pi pi-file" severity="primary" size="small"
-            :disabled="selectedRelationIds.size !== 1"
-            v-tooltip.bottom="selectedRelationIds.size !== 1 ? t('dashboard.naplata.billOneClient') : undefined"
-            @click="openBillDialog"
-          />
-          <Button
-            v-if="selectedDebtIds.size > 0"
-            :label="t('dashboard.naplata.deleteSelected', { n: selectedDebtIds.size })"
-            icon="pi pi-trash" severity="danger" size="small" outlined
-            @click="deleteSelectedDebts"
-          />
           <button class="refresh-btn" @click="refreshDebts" v-tooltip.left="t('dashboard.naplata.refresh')">
             <i class="pi pi-refresh" />
           </button>
@@ -510,37 +603,75 @@ onMounted(async () => {
               class="grp-client clickable"
               @click="router.push(`/payments?customerVehicleRelationId=${g.relationId}`)"
             >{{ g.clientName || '—' }}</span>
-            <span v-if="g.vehiclePlate || g.vehicleVin" class="grp-vehicle muted">
-              <span v-if="g.vehiclePlate" class="plate">{{ g.vehiclePlate }}</span>
-              <span v-else>{{ g.vehicleVin }}</span>
-              <span v-if="g.vehicleMakerModel"> · {{ g.vehicleMakerModel }}</span>
+            <span v-if="g.vehiclePlate || g.vehicleVin" class="grp-vehicle">
+              <span v-if="g.vehiclePlate" class="plate-chip">{{ g.vehiclePlate }}</span>
+              <span v-else class="vin muted">{{ g.vehicleVin }}</span>
+              <span v-if="g.vehicleMakerModel" class="grp-mm muted">{{ g.vehicleMakerModel }}</span>
             </span>
-            <span class="grp-total mono">{{ fmtMoney(g.total) }}</span>
+            <span class="grp-total mono">{{ fmtMoney(g.total) }} <span class="grp-den">ден.</span></span>
             <button class="grp-detail-btn" @click.stop="openDetail(g)"
                     v-tooltip.left="t('dashboard.naplata.details')">
               <i class="pi pi-window-maximize" />
             </button>
           </div>
-          <div v-for="r in g.rows" :key="r.id" class="grp-row"
-               :class="{ selected: isSelected(r.id), 'row-paid': r.paid }">
-            <Checkbox v-if="!r.paid"
-              :modelValue="isSelected(r.id)"
-              :binary="true"
-              @update:modelValue="(v: boolean) => toggleSelected(r.id, v)"
-            />
-            <span v-else class="paid-dot" v-tooltip.right="t('dashboard.naplata.paidTip')"><i class="pi pi-check" /></span>
-            <span class="col-service" :title="r.priceCatalogName ?? ''">{{ r.priceCatalogName || '—' }}</span>
-            <span class="col-note muted" :title="r.note ?? ''">{{ r.note || '' }}</span>
-            <span class="col-price mono">
-              {{ fmtMoney(r.price) }}
-              <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
-            </span>
+          <div class="grp-rows">
+            <div v-for="r in g.rows" :key="r.id" class="grp-row"
+                 :class="{ selected: isSelected(r.id), 'row-paid': r.paid }">
+              <Checkbox v-if="!r.paid"
+                :modelValue="isSelected(r.id)"
+                :binary="true"
+                @update:modelValue="(v: boolean) => toggleSelected(r.id, v)"
+              />
+              <span v-else class="paid-dot" v-tooltip.right="t('dashboard.naplata.paidTip')"><i class="pi pi-check" /></span>
+              <span class="col-service" :title="r.composedName ?? r.priceCatalogName ?? ''">
+                {{ r.composedName || r.priceCatalogName || '—' }}
+              </span>
+              <span class="col-note" :title="r.note ?? ''">
+                <button v-if="noteRef(r.note)" class="note-chip"
+                        @click.stop="router.push(noteRef(r.note)!.to)">
+                  <i :class="noteRef(r.note)!.icon" /><span>{{ noteRef(r.note)!.label }}</span>
+                </button>
+                <span v-else class="muted">{{ r.note || '' }}</span>
+              </span>
+              <span class="col-price mono" :class="{ 'price-zero': r.price === 0 }">
+                <span v-if="editDebtId === r.id" class="price-edit-wrap" @click.stop>
+                  <InputNumber v-model="editDebtPrice" :minFractionDigits="2" :maxFractionDigits="2" :min="0"
+                               inputClass="price-edit-input" autofocus
+                               @keydown.enter="saveDebtPrice" @keydown.esc="cancelEditDebt" />
+                  <Button icon="pi pi-check" size="small" text severity="success" :loading="savingDebtPrice" @click.stop="saveDebtPrice" />
+                  <Button icon="pi pi-times" size="small" text severity="secondary" :disabled="savingDebtPrice" @click.stop="cancelEditDebt" />
+                </span>
+                <template v-else>
+                  <span class="price-val" :class="{ editable: !r.paid }"
+                        :title="!r.paid ? t('payments.editPriceHint') : ''"
+                        @click.stop="beginEditDebt(r)">{{ fmtMoney(r.price) }}</span>
+                  <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+                </template>
+              </span>
+            </div>
           </div>
         </div>
 
-        <div class="naplata-footer">
-          <span class="muted">{{ t('dashboard.naplata.total') }}</span>
-          <span class="mono">{{ fmtMoney(debtTotal) }} <span class="muted">ден.</span></span>
+        <!-- Постојана акциска лента: копчињата се секогаш видливи, disabled без селекција. -->
+        <div class="naplata-actionbar">
+          <span class="sel-hint" :class="{ faded: selectedDebtIds.size === 0 }">
+            {{ selectedDebtIds.size
+              ? t('dashboard.naplata.selectedHint', { n: selectedDebtIds.size, sum: fmtMoney(selectedTotal) })
+              : t('dashboard.naplata.selectHint') }}
+          </span>
+          <Button
+            :label="selectedDebtIds.size ? t('dashboard.naplata.deleteSelected', { n: selectedDebtIds.size }) : t('dashboard.naplata.deleteSelectedPlain')"
+            icon="pi pi-trash" severity="danger" size="small" outlined
+            :disabled="selectedDebtIds.size === 0"
+            @click="deleteSelectedDebts"
+          />
+          <Button
+            :label="selectedDebtIds.size ? t('dashboard.naplata.makeBill', { n: selectedDebtIds.size }) : t('dashboard.naplata.makeBillPlain')"
+            icon="pi pi-file" severity="primary" size="small"
+            :disabled="selectedDebtIds.size === 0 || selectedRelationIds.size !== 1"
+            v-tooltip.top="selectedDebtIds.size > 0 && selectedRelationIds.size !== 1 ? t('dashboard.naplata.billOneClient') : undefined"
+            @click="openBillDialog"
+          />
         </div>
       </div>
       <div v-else-if="loading" class="empty"><i class="pi pi-spin pi-spinner" /></div>
@@ -551,6 +682,8 @@ onMounted(async () => {
     </div>
   </div>
 
+  <!-- Bottom: последна активност, една до друга -->
+  <div class="dash-bottom-grid">
   <div class="recent-card">
     <div class="recent-header">
       <h2>{{ t('dashboard.recentOpen.title') }}</h2>
@@ -579,11 +712,6 @@ onMounted(async () => {
       </Column>
       <Column :header="t('requests.col.created')" style="width:110px">
         <template #body="{ data }">{{ fmtDate(data.createdAt) }}</template>
-      </Column>
-      <Column :header="t('requests.col.status')" style="width:90px">
-        <template #body>
-          <Tag :value="t('requests.status.open')" severity="success" />
-        </template>
       </Column>
     </DataTable>
     <div v-else class="empty">
@@ -637,10 +765,11 @@ onMounted(async () => {
       <span>{{ t('dashboard.recentExams.empty') }}</span>
     </div>
   </div>
+  </div>
 
   <!-- Детали на сметка dialog — view / add / delete ставки for one client account -->
   <Dialog v-model:visible="detailVisible" :header="t('dashboard.naplata.details')"
-          modal class="debt-detail-dialog" :style="{ width: '680px', maxWidth: '96vw' }">
+          modal class="debt-detail-dialog" :style="{ width: '980px', maxWidth: '96vw' }">
     <div v-if="detailGroup" class="detail-head">
       <b>{{ detailGroup.clientName || '—' }}</b>
       <span v-if="detailGroup.clientMB" class="muted mono">· {{ detailGroup.clientMB }}</span>
@@ -657,12 +786,26 @@ onMounted(async () => {
         <span class="col-x"></span>
       </div>
       <div v-for="r in detailRows" :key="r.id" class="detail-row" :class="{ 'row-paid': r.paid }">
-        <span class="col-service" :title="r.priceCatalogName ?? ''">{{ r.priceCatalogName || '—' }}</span>
+        <span class="col-service" :title="r.composedName ?? r.priceCatalogName ?? ''">
+          {{ r.composedName || r.priceCatalogName || '—' }}
+          <span v-if="derivationLabel(r)" class="deriv-chip">{{ derivationLabel(r) }}</span>
+        </span>
         <span class="col-note muted" :title="r.note ?? ''">{{ r.note || '' }}</span>
         <span class="col-date muted">{{ fmtDate(r.createdAt) }}</span>
         <span class="col-price mono">
-          {{ fmtMoney(r.price) }}
-          <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+          <span v-if="editDebtId === r.id" class="price-edit-wrap" @click.stop>
+            <InputNumber v-model="editDebtPrice" :minFractionDigits="2" :maxFractionDigits="2" :min="0"
+                         inputClass="price-edit-input" autofocus
+                         @keydown.enter="saveDebtPrice" @keydown.esc="cancelEditDebt" />
+            <Button icon="pi pi-check" size="small" text severity="success" :loading="savingDebtPrice" @click.stop="saveDebtPrice" />
+            <Button icon="pi pi-times" size="small" text severity="secondary" :disabled="savingDebtPrice" @click.stop="cancelEditDebt" />
+          </span>
+          <template v-else>
+            <span class="price-val" :class="{ editable: !r.paid }"
+                  :title="!r.paid ? t('payments.editPriceHint') : ''"
+                  @click.stop="beginEditDebt(r)">{{ fmtMoney(r.price) }}</span>
+            <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+          </template>
         </span>
         <span class="col-x">
           <button v-if="!r.paid" class="row-del" @click="deleteDetailRow(r)"
@@ -798,16 +941,88 @@ onMounted(async () => {
 .empty i { font-size: 1.4rem }
 
 /* Top row: tree | pending-bills.  Wraps to one column under ~960px. */
-.dash-top-grid {
+/* ===== KPI лента ===== */
+.stat-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .6rem;
+  margin-top: 1rem;
+}
+.stat-tile {
+  display: flex; align-items: center; gap: .6rem;
+  background: var(--p-content-background);
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 10px;
+  padding: .55rem .7rem;
+}
+.clickable-tile { cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease }
+.clickable-tile:hover { border-color: color-mix(in srgb, var(--p-primary-color) 45%, var(--p-content-border-color)); box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06)) }
+.stat-ico {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 9px; font-size: .95rem;
+}
+.si-blue   { background: color-mix(in srgb, #2563eb 13%, transparent); color: #2563eb }
+.si-amber  { background: color-mix(in srgb, #d97706 14%, transparent); color: #d97706 }
+.si-green  { background: color-mix(in srgb, #059669 13%, transparent); color: #059669 }
+.si-violet { background: color-mix(in srgb, #7c3aed 12%, transparent); color: #7c3aed }
+.stat-body { min-width: 0 }
+.stat-val {
+  font-size: 1.05rem; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-unit { font-size: .68rem; font-weight: 500; color: var(--p-text-muted-color) }
+.stat-label { font-size: .68rem; color: var(--p-text-muted-color); line-height: 1.2 }
+
+/* ===== Main grid: тесна лева колона + Наплата ===== */
+.dash-main-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 370px) minmax(0, 1fr);
   gap: 1rem;
-  margin-top: 1.25rem;
+  margin-top: 1rem;
+  align-items: start;   /* картичките не се растегнуваат — нема мртов простор */
 }
-@media (max-width: 760px) {
-  .dash-top-grid { grid-template-columns: 1fr }
+.dash-side { display: flex; flex-direction: column; gap: 1rem; min-width: 0 }
+.dash-main-grid > .recent-card, .dash-side > .recent-card { margin-top: 0 }
+
+/* Брзи акции */
+.shortcuts-card { padding: .65rem .85rem }
+.shortcuts-card .recent-header { margin-bottom: .45rem }
+.shortcut-grid { display: grid; grid-template-columns: 1fr; gap: .45rem }
+.shortcut {
+  display: flex; align-items: center; gap: .45rem;
+  min-width: 0;
+  padding: .45rem .55rem;
+  background: transparent;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 8px;
+  color: var(--p-text-color);
+  font-size: .76rem; font-weight: 600; text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
 }
-.dash-top-grid > .recent-card { margin-top: 0 }   /* parent grid owns the spacing */
+.shortcut i { color: var(--p-primary-color); font-size: .85rem; flex: 0 0 auto }
+.shortcut span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.shortcut:hover {
+  background: color-mix(in srgb, var(--p-primary-color) 6%, transparent);
+  border-color: color-mix(in srgb, var(--p-primary-color) 40%, var(--p-content-border-color));
+}
+
+/* ===== Bottom: две табели една до друга ===== */
+.dash-bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: start;
+}
+.dash-bottom-grid > .recent-card { margin-top: 0 }
+
+@media (max-width: 1100px) {
+  .dash-main-grid { grid-template-columns: 1fr }
+  .dash-bottom-grid { grid-template-columns: 1fr }
+}
 
 /* Request-type shortcut tree — compact, dense, matches the dashboard scale */
 .req-card { padding: .65rem .85rem; }
@@ -868,8 +1083,6 @@ onMounted(async () => {
 .naplata-head .col-note,
 .naplata-head .col-price { line-height: 1 }
 .naplata-actions { display: flex; gap: .35rem; align-items: center }
-.dash-shortcuts { display: flex; gap: .5rem; align-items: center }
-.dash-shortcuts :deep(.p-button) { font-size: .8125rem; padding: .3rem .75rem }
 .bill-form { display: flex; flex-direction: column; gap: .6rem }
 .bill-row { display: flex; justify-content: space-between; font-size: .9rem }
 .bill-field { display: flex; flex-direction: column; gap: .3rem; margin-top: .4rem }
@@ -893,40 +1106,103 @@ onMounted(async () => {
 .clickable { cursor: pointer }
 .clickable:hover { color: var(--p-primary-color) }
 .naplata-head {
-  font-size: .68rem; text-transform: uppercase; letter-spacing: .02em;
+  font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
   color: var(--p-text-muted-color);
-  border-bottom: 1px solid var(--p-content-border-color);
-  padding-bottom: 3px; margin-bottom: 2px;
+  padding: 0 .55rem 4px;
+  margin-bottom: 2px;
 }
 .col-service { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .col-note    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.col-price   { text-align: right }
+.col-price   { text-align: right; font-variant-numeric: tabular-nums }
 
-.naplata-group { margin-bottom: .25rem }
+/* Секој клиент = картичка: тонирано заглавие + редови со зебра. */
+.naplata-group {
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 8px;
+  margin-bottom: .45rem;
+  overflow: hidden;
+  background: var(--p-content-background);
+}
 .grp-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
-  padding: 2px .35rem;
-  background: var(--p-content-background); border-radius: 4px;
+  display: flex; align-items: center; gap: .5rem;
+  padding: .28rem .55rem;
+  background: color-mix(in srgb, var(--p-primary-color) 5%, var(--p-content-background));
+  border-bottom: 1px solid var(--p-content-border-color);
   font-weight: 600; font-size: .8rem;
   cursor: pointer;
-  border-bottom: 1px solid var(--p-content-border-color);
-  margin-top: 2px;
 }
-.grp-head:hover { background: var(--p-content-hover-background, rgba(0,0,0,.04)) }
-.grp-client { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.grp-vehicle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: .73rem }
-.grp-total { flex: 0 0 auto }
-.grp-row { padding-left: 1.25rem }
-.grp-row:hover { background: var(--p-content-hover-background, rgba(0,0,0,.04)) }
+.grp-head:hover { background: color-mix(in srgb, var(--p-primary-color) 9%, var(--p-content-background)) }
+.grp-client { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.grp-vehicle {
+  flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: .4rem;
+  overflow: hidden; white-space: nowrap;
+}
+.plate-chip {
+  flex: 0 0 auto;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-weight: 700; font-size: .68rem; letter-spacing: .04em; line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 4px;
+  background: var(--p-content-background);
+  color: var(--p-text-color);
+}
+.grp-mm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: .72rem }
+.vin { font-family: ui-monospace, monospace; font-size: .7rem }
+.grp-total { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums }
+.grp-den { font-weight: 500; font-size: .66rem; color: var(--p-text-muted-color) }
 
-.naplata-footer {
-  display: flex; justify-content: flex-end; gap: .75rem; align-items: baseline;
-  margin-top: .45rem; padding-top: .35rem;
-  border-top: 1px solid var(--p-content-border-color);
-  font-weight: 600;
+.grp-rows { padding: 2px 0 }
+.grp-row { padding-left: .55rem; padding-right: .55rem }
+.grp-rows .grp-row:nth-child(even) { background: color-mix(in srgb, var(--p-text-color) 2.5%, transparent) }
+.grp-row:hover { background: var(--p-content-hover-background, rgba(0,0,0,.05)) !important }
+.grp-row.selected { background: var(--p-highlight-background, rgba(37, 99, 235, .08)) !important }
+
+/* Ставката води; категоријата („за X —") се повлекува како ситен сив суфикс. */
+
+/* Извор-чип: „Тех. преглед бр.X" / „Барање бр.X" — кликабилен, води до записот. */
+.note-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  border: 1px solid var(--p-content-border-color); background: transparent;
+  border-radius: 999px; padding: 1px 8px;
+  font-size: .67rem; line-height: 1.3; color: var(--p-text-muted-color);
+  cursor: pointer; overflow: hidden;
 }
+.note-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.note-chip i { font-size: .6rem; flex: 0 0 auto }
+.note-chip:hover { color: var(--p-primary-color); border-color: color-mix(in srgb, var(--p-primary-color) 45%, transparent); background: color-mix(in srgb, var(--p-primary-color) 6%, transparent) }
+
+.price-zero { opacity: .45 }
+
+/* Постојана акциска лента на дното од Наплата */
+.naplata-actionbar {
+  display: flex; justify-content: flex-end; align-items: center; gap: .5rem;
+  margin-top: .5rem; padding: .35rem .5rem;
+  background: color-mix(in srgb, var(--p-primary-color) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--p-primary-color) 16%, transparent);
+  border-radius: 8px;
+}
+.sel-hint { margin-right: auto; font-size: .72rem; font-weight: 600; color: var(--p-text-color); font-variant-numeric: tabular-nums }
+.sel-hint.faded { color: var(--p-text-muted-color); font-weight: 500 }
 .plate { font-family: monospace; font-weight: 600 }
 .mono  { font-family: monospace }
+
+/* Изведени такси — мала ознака „1,5% од технички преглед" / „1% од патна такса" */
+.deriv-chip {
+  display: inline-block; margin-left: .4rem; padding: 0 .4rem;
+  font-size: .68rem; line-height: 1.35; white-space: nowrap;
+  color: var(--p-primary-700, #1d4ed8);
+  background: color-mix(in srgb, var(--p-primary-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--p-primary-color) 25%, transparent);
+  border-radius: 999px; vertical-align: 1px;
+}
+
+/* --- Inline уредување на цена на долг --- */
+.price-val.editable { cursor: pointer; border-bottom: 1px dashed var(--p-surface-400) }
+.price-val.editable:hover { color: var(--p-primary-600); border-bottom-color: var(--p-primary-400) }
+.price-edit-wrap { display: inline-flex; align-items: center; gap: 1px }
+.price-edit-wrap :deep(.price-edit-input) { width: 74px; padding: 1px 4px; text-align: right; font-family: monospace; font-size: .78rem }
+.price-edit-wrap :deep(.p-button) { width: 22px; height: 22px; padding: 0 }
 
 /* --- Детали на сметка dialog --- */
 .grp-detail-btn {
@@ -938,23 +1214,25 @@ onMounted(async () => {
 
 .detail-head {
   display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap;
-  font-size: .82rem; margin-bottom: .5rem;
+  font-size: .9rem; margin-bottom: .6rem;
 }
-.detail-rows { font-size: .78rem; line-height: 1.25 }
+.detail-rows { font-size: .85rem; line-height: 1.35 }
 .detail-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) 5.2rem 6.8rem 1.4rem;
-  gap: .5rem; align-items: center;
-  padding: 2px .35rem;
+  grid-template-columns: minmax(0, 2.4fr) minmax(13.5rem, 1fr) 5.4rem 7rem 1.5rem;
+  gap: .6rem; align-items: center;
+  padding: 4px .4rem;
 }
 .detail-row:hover:not(.detail-row-head) { background: var(--p-content-hover-background, rgba(0,0,0,.04)) }
 .detail-row-head {
-  font-weight: 600; font-size: .68rem; letter-spacing: .04em;
+  font-weight: 600; font-size: .72rem; letter-spacing: .04em;
   color: var(--p-text-muted-color);
   border-bottom: 1px solid var(--p-content-border-color);
   padding-bottom: 3px;
 }
-.detail-row .col-service, .detail-row .col-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.detail-row:not(.detail-row-head) { border-bottom: 1px solid var(--p-content-border-color, rgba(0,0,0,.06)) }
+.detail-row .col-service { overflow-wrap: anywhere; white-space: normal; overflow: visible; text-overflow: clip }
+.detail-row .col-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .detail-row .col-price { text-align: right; white-space: nowrap }
 .detail-row .col-date { white-space: nowrap }
 .detail-row.row-paid { opacity: .55 }

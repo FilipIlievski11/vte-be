@@ -163,10 +163,23 @@ interface KindRow { kind: string; vehicles: number; amount: number }
 interface CollectionPreviewDto {
   from: string; to: string; companyName: string; categoryName: string;
   totalVehicles: number; totalAmount: number; rows: KindRow[];
+  communityName: string | null;
 }
 const prevFrom = ref<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
 const prevTo = ref<Date>(new Date(today));
 const preview = ref<CollectionPreviewDto | null>(null);
+
+// Филтер по општина — „сите" (0) е стандард; опции = само општини со податоци.
+interface CommunityOpt { id: number; name: string }
+const communityOptions = ref<CommunityOpt[]>([]);
+const previewCommunityId = ref<number>(0);
+async function loadCommunities() {
+  if (communityOptions.value.length) return;
+  try {
+    const { data } = await api.get<{ id: number; name: string }[]>('/reports/collection-communities');
+    communityOptions.value = [{ id: 0, name: t('reports.allCommunities') }, ...data];
+  } catch { communityOptions.value = [{ id: 0, name: t('reports.allCommunities') }]; }
+}
 const previewCats = computed<MonthlyCat[]>(() => [
   { key: 'roads',        ids: '1',         label: t('reports.cats.roads') },
   { key: 'budget',       ids: '9',         label: t('reports.cats.budget') },
@@ -190,7 +203,10 @@ async function loadPreview() {
   loading.value = true;
   try {
     const { data } = await api.get<CollectionPreviewDto>('/reports/collection-preview', {
-      params: { from: isoDay(prevFrom.value), to: isoDay(prevTo.value), categoryGroupIds: cat.ids },
+      params: {
+        from: isoDay(prevFrom.value), to: isoDay(prevTo.value), categoryGroupIds: cat.ids,
+        communityId: previewCommunityId.value || undefined,
+      },
     });
     if (seq !== previewReqSeq) return;   // задоцнет одговор од претходна селекција — отфрли
     preview.value = data;
@@ -206,6 +222,7 @@ async function downloadPreviewXlsx() {
       params: {
         from: isoDay(prevFrom.value), to: isoDay(prevTo.value),
         categoryGroupIds: selectedPreviewCat.value.ids, title: selectedPreviewCat.value.label,
+        communityId: previewCommunityId.value || undefined,
       },
       responseType: 'blob',
     });
@@ -231,7 +248,12 @@ function downloadXlsx() {
   else if (mode.value === 'monthly') downloadMonthlyXlsx();
   else downloadPreviewXlsx();
 }
-function switchMode(m: Mode) { if (m === mode.value) return; mode.value = m; load(); }
+function switchMode(m: Mode) {
+  if (m === mode.value) return;
+  mode.value = m;
+  if (m === 'preview') loadCommunities();
+  load();
+}
 
 // Printing: toggle a body-level class so a GLOBAL print rule can hide the app chrome.
 function clearPrintMode() { document.body.classList.remove('printing-report'); }
@@ -286,6 +308,8 @@ const hasContent = computed(() =>
         <div v-else class="period-pick">
           <Select v-model="previewCatKey" :options="previewCats" optionLabel="label" optionValue="key"
                   size="small" class="ctl-cat" @change="loadPreview" />
+          <Select v-model="previewCommunityId" :options="communityOptions" optionLabel="name" optionValue="id"
+                  size="small" class="ctl-community" filter @change="loadPreview" />
           <DatePicker v-model="prevFrom" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
           <span class="dash">–</span>
           <DatePicker v-model="prevTo" dateFormat="dd.mm.yy" size="small" class="ctl-date" showIcon iconDisplay="input" />
@@ -420,6 +444,7 @@ const hasContent = computed(() =>
         <div class="rh-company">{{ preview.companyName }}</div>
         <div class="rh-title">{{ t('reports.preview.docTitle', { name: (previewLoadedCat ?? selectedPreviewCat).label }) }}</div>
         <div class="rh-period">{{ t('reports.preview.period', { from: preview.from, to: preview.to }) }}</div>
+        <div v-if="preview.communityName" class="rh-period">{{ t('reports.communityLabel', { name: preview.communityName }) }}</div>
       </div>
 
       <table v-if="preview.rows.length" class="report-table preview-table">
@@ -493,6 +518,8 @@ const hasContent = computed(() =>
 .period-pick .dash { color: var(--p-text-muted-color) }
 .ctl-cat { min-width: 12rem; max-width: 16rem }
 .ctl-cat :deep(.p-select-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ctl-community { min-width: 10rem; max-width: 13rem }
+.ctl-community :deep(.p-select-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ctl-month { min-width: 8.5rem }
 .ctl-year { flex: 0 0 auto }
 .ctl-year :deep(.year-input) { width: 4.6rem; text-align: center }

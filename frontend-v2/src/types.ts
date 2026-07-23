@@ -757,6 +757,8 @@ export interface TechExamWrite {
   technicalExamTypeId: number;
   organizationId: number;
   madeDate: string;                       // yyyy-MM-dd (DateOnly)
+  /** Експлицитен резултат (исправен/неисправен); null → серверот изведува од ставките. */
+  vehicleIsRight?: boolean | null;
   firstControllerLegacyId: number | null;
   secondControllerLegacyId: number | null;
   explanationNote: string | null;
@@ -918,6 +920,48 @@ export interface CustomerDebtRow {
   paid: boolean;
   settledByLineId: number | null;
   createdAt: string;
+  /** Full legacy bill-grid name — „{Категорија} {Ставка} {Параметар}". */
+  composedName: string | null;
+  /** Broad fee class (legacy PaymentCategories.Id) — за изведени такси (совет %). */
+  paymentCategoryGroupId: number | null;
+}
+
+/** СМЕТКОПОТВРДА print bundle (legacy landscape receipt, two copies). */
+export interface ReceiptLine {
+  name: string | null;
+  bezDdv: number;
+  popust: number;
+  ddv: number;
+  cena: number;
+}
+export interface ReceiptPrint {
+  id: number;
+  documentNumber: string;
+  issueDate: string;
+  paymentTypeName: string | null;
+  orgName: string | null;
+  orgTaxNumber: string | null;
+  orgAddress: string | null;
+  orgPhone: string | null;
+  clientName: string | null;
+  clientAddress: string | null;
+  clientCityName: string | null;
+  vehicleCategoryLabel: string | null;
+  plate: string | null;
+  makerModel: string | null;
+  workingCapacityCc: number | null;
+  vin: string | null;
+  powerKw: number | null;
+  engineNumber: string | null;
+  carryKg: number;
+  lines: ReceiptLine[];
+  totalBezDdv: number;
+  totalDdv: number;
+  total: number;
+  referentName: string | null;
+  note: string | null;
+  paid: boolean;
+  stornoed: boolean;
 }
 
 /** Certificate print bundle (legacy „Потврда за техничка исправност"). */
@@ -1195,6 +1239,14 @@ export interface VehiclePermissionPrint {
   authorizedIdCardNumber: string | null;
   authorizedPassportNumber: string | null;
   authorizedAddress: string | null;
+  // Request-form (БАРАЊЕ) composite-line enrichment
+  ownerIsBusiness?: boolean | null;
+  ownerBirthCityName?: string | null;
+  ownerDateOfBirth?: string | null;
+  ownerLivingCityName?: string | null;
+  authorizedBirthCityName?: string | null;
+  authorizedDateOfBirth?: string | null;
+  authorizedLivingCityName?: string | null;
   vehicleDisplay: string | null;
   plateNumber: string | null;
   vehicleVin: string | null;
@@ -1232,6 +1284,9 @@ export interface PriceCatalog {
   vehicleField: string | null;
   parametarFrom: number | null;
   parametarTo: number | null;
+  /** Старост на возилото во години (Сл. весник 89/2022 еко-тарифа). */
+  ageFrom: number | null;
+  ageTo: number | null;
   vehicleCategoryFilter: string | null;
   bankAccount: string | null;
   paymentForm: string | null;

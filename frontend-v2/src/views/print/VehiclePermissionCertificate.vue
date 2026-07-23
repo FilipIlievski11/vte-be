@@ -22,27 +22,33 @@ const BASE_PT = 11.25;
 // Built-in default positions (mm) + font pt, keyed by meaning. x/y route through
 // resolve() so admins can move each VALUE; the two halves of the pre-printed form
 // (барање / картичка) repeat several values, so keys are suffixed per half.
+// Позициите се извлечени 1:1 од легаси PDF рендер (rptOdobrenieZaTugoV.pdf):
+// за секоја вредност центарот на кутијата = центар на рендерираниот текст, а врвот
+// = baseline − 4.4mm (кутија h=6.5mm со вертикално центриран 11.25pt текст).
 const DEF: Record<string, { x: number; y: number; size?: number }> = {
   // ---- left part (барање половина) ----
-  authName:      { x: 40.2, y: 14.8,  size: BASE_PT },
-  validFrom:     { x: 34.9, y: 30.7,  size: BASE_PT },
-  validTill:     { x: 77.3, y: 30.7,  size: BASE_PT },
-  vehicle:       { x: 6.4,  y: 52.9,  size: BASE_PT },
-  plate:         { x: 32.8, y: 70.9,  size: BASE_PT },
-  trafficLic:    { x: 38.1, y: 83.6,  size: BASE_PT },
-  triptique:     { x: 47.6, y: 96.3,  size: BASE_PT },
-  ownerName:     { x: 6.4,  y: 108.0, size: BASE_PT },
-  ownerAddress:  { x: 6.4,  y: 115.4, size: BASE_PT },
+  authName:      { x: 41.1,  y: 8.9,   size: BASE_PT },
+  validFrom:     { x: 32.0,  y: 23.8,  size: BASE_PT },
+  validTill:     { x: 76.5,  y: 23.8,  size: BASE_PT },
+  vehicle:       { x: 7.4,   y: 46.8,  size: BASE_PT },
+  plate:         { x: 34.1,  y: 62.7,  size: BASE_PT },
+  trafficLic:    { x: 39.1,  y: 73.8,  size: BASE_PT },
+  // триптикот го нема во референтниот PDF (празен кај тој запис) — позициониран
+  // според растојанието од легаси дизајнерот под сообраќајната дозвола.
+  triptique:     { x: 48.6,  y: 86.5,  size: BASE_PT },
+  ownerName:     { x: 7.4,   y: 98.4,  size: BASE_PT },
+  ownerAddress:  { x: 7.4,   y: 107.3, size: BASE_PT },
+  ownerIdCard:   { x: 5.6,   y: 116.3, size: BASE_PT },
   // ---- right part (одобрение картичка) ----
-  cardAuthName:  { x: 111.1, y: 44.4,  size: BASE_PT },
-  cardAuthEmbg:  { x: 111.1, y: 58.2,  size: BASE_PT },
-  cardIssuer:    { x: 163.0, y: 58.2,  size: BASE_PT },
-  cardVehicle:   { x: 113.2, y: 80.4,  size: BASE_PT },
-  cardPlate:     { x: 161.9, y: 80.4,  size: BASE_PT },
-  cardTrafficLic:{ x: 141.8, y: 97.4,  size: BASE_PT },
-  cardValidFrom: { x: 149.2, y: 110.1, size: BASE_PT },
-  cardValidTill: { x: 179.9, y: 110.1, size: BASE_PT },
-  cardIssuePlace:{ x: 111.1, y: 118.5, size: BASE_PT },
+  cardAuthName:  { x: 109.0, y: 42.0,  size: BASE_PT },
+  cardAuthEmbg:  { x: 111.1, y: 53.1,  size: BASE_PT },
+  cardIssuer:    { x: 161.9, y: 52.4,  size: BASE_PT },
+  cardVehicle:   { x: 136.7, y: 76.9,  size: BASE_PT },
+  cardPlate:     { x: 136.7, y: 88.4,  size: BASE_PT },
+  cardTrafficLic:{ x: 141.6, y: 99.7,  size: BASE_PT },
+  cardValidFrom: { x: 144.7, y: 110.4, size: BASE_PT },
+  cardValidTill: { x: 177.3, y: 110.4, size: BASE_PT },
+  cardIssuePlace:{ x: 111.1, y: 118.7, size: BASE_PT },
 };
 lay.setDefaults(DEF);
 
@@ -64,24 +70,24 @@ function lat(s: string | null | undefined): string {
   if (!s) return '';
   return [...s.trim()].map(ch => MK2LAT[ch] ?? ch).join('').toUpperCase();
 }
+// Легаси PDF формат: 14-07-2026 (со цртички).
 function fmt(s: string | null | undefined): string {
   if (!s) return '';
   const d = new Date(s);
   if (isNaN(d.getTime())) return '';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getFullYear()}`;
+  return `${dd}-${mm}-${d.getFullYear()}`;
 }
 
-// Owner across two lines, exactly like legacy printPermisionInfo:
-//   line 1: NAME [бр.лк. X]   ·   line 2: ADDRESS
-const ownerLine1 = computed(() => {
-  const b = bundle.value;
-  if (!b) return '';
-  const idPart = b.authorizedIdCardNumber ? '' : ''; // owner's лк not stored separately in v2
-  return lat(`${b.ownerName ?? ''}${idPart}`);
-});
+// Owner across three lines, exactly like the legacy PDF:
+//   NAME  ·  ADDRESS  ·  BR.LK.<бр. на лична карта>
+const ownerLine1 = computed(() => lat(bundle.value?.ownerName));
 const ownerLine2 = computed(() => lat(bundle.value?.ownerAddress));
+const ownerIdLine = computed(() => {
+  const id = bundle.value?.ownerIdNumber;
+  return id ? `BR.LK.${lat(id)}` : '';
+});
 
 // Fields: stable key `k`, (w, h) box in mm from the Designer, text centred. x/y come
 // from resolve(k); `s` is the field's dynamic default font pt (undefined → BASE_PT).
@@ -101,9 +107,10 @@ const fields = computed<F[]>(() => {
     { k: 'triptique',     w: 54.0, h: 6.5, t: b.triptiqueNumber ?? '' },
     { k: 'ownerName',     w: 94.0, h: 6.5, t: ownerLine1.value },
     { k: 'ownerAddress',  w: 94.0, h: 6.5, t: ownerLine2.value },
+    { k: 'ownerIdCard',   w: 94.0, h: 6.5, t: ownerIdLine.value },
     // ---- right part (одобрение картичка) ----
     { k: 'cardAuthName',  w: 94.0, h: 6.5, t: lat(b.authorizedName) },
-    { k: 'cardAuthEmbg',  w: 40.5, h: 6.5, t: b.authorizedPassportNumber ?? b.authorizedIdCardNumber ?? '' },
+    { k: 'cardAuthEmbg',  w: 40.5, h: 6.5, t: lat(b.authorizedPassportNumber ?? b.authorizedIdCardNumber) },
     { k: 'cardIssuer',    w: 41.5, h: 6.5, t: lat(b.issuerName) },
     // legacy: > 19 chars → font drops to 9pt on the card side
     { k: 'cardVehicle',   w: 43.5, h: 6.5, t: vehDisp, s: vehDisp.length > 19 ? 9 : undefined },

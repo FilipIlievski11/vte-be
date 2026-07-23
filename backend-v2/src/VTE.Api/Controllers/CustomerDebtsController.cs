@@ -39,16 +39,25 @@ public class CustomerDebtsController : ControllerBase
         byte Origin, long? OriginRequestId, long? OriginTechnicalExamId,
         int OrganizationId,
         bool Paid, long? SettledByLineId,
-        DateTime CreatedAt);
+        DateTime CreatedAt,
+        // Full legacy bill-grid name: "{Категорија} {Ставка} {Параметар}" — used where the
+        // row stands alone (детали на сметка, delete confirm), not in the dense panel.
+        string? ComposedName,
+        // Broad fee class (legacy PaymentCategories.Id) — lets the FE annotate derived
+        // fees (совет 1,5% од ТП: групи 27/63/1063; 1% од патна такса: 86/1086).
+        int? PaymentCategoryGroupId);
 
     /// <summary>Substitute the {0}/{1} parametar-range placeholders in a legacy price-item
-    /// name with the rule's actual ParametarFrom/ParametarTo (rendered as whole numbers).
+    /// name with the rule's actual ParametarFrom/ParametarTo. Fractional bounds render
+    /// with comma decimals ("од 66,1 до 84") — same as the legacy MK-culture grid.
     /// Uses Replace, not String.Format, so stray braces in the name can't throw.</summary>
     private static string? FormatPriceName(string? name, double? from, double? to)
     {
+        static string num(double v) =>
+            v % 1 == 0 ? ((long)v).ToString() : v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
         if (string.IsNullOrEmpty(name)) return name;
-        if (name.Contains("{0}")) name = name.Replace("{0}", from.HasValue ? ((long)from.Value).ToString() : "");
-        if (name.Contains("{1}")) name = name.Replace("{1}", to.HasValue ? ((long)to.Value).ToString() : "");
+        if (name.Contains("{0}")) name = name.Replace("{0}", from.HasValue ? num(from.Value) : "");
+        if (name.Contains("{1}")) name = name.Replace("{1}", to.HasValue ? num(to.Value) : "");
         return name;
     }
 
@@ -123,11 +132,22 @@ public class CustomerDebtsController : ControllerBase
         // with {0}/{1} placeholders for the matched parametar range (e.g.
         // "за носивост од {0} до {1}"). Substitute the rule's ParametarFrom/ParametarTo so
         // the Наплата panel shows the real range ("…од 3001 до 5000"), like the legacy app.
-        var priceCatalog = (await _db.PriceCatalogs.AsNoTracking()
+        var pcRaw = await _db.PriceCatalogs.AsNoTracking()
             .Where(p => priceCatalogIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.ParametarFrom, p.ParametarTo })
-            .ToListAsync())
-            .ToDictionary(p => p.Id, p => FormatPriceName(p.Name, p.ParametarFrom, p.ParametarTo));
+            .Select(p => new { p.Id, p.Name, p.ParametarFrom, p.ParametarTo, p.PaymentCategoryGroupId })
+            .ToListAsync();
+        var priceCatalog = pcRaw.ToDictionary(p => p.Id, p => FormatPriceName(p.Name, p.ParametarFrom, p.ParametarTo));
+
+        // Full legacy-composed variant ("{Категорија} {Ставка} {Параметар}") for standalone display.
+        var debtGroupIds = pcRaw.Where(p => p.PaymentCategoryGroupId.HasValue)
+            .Select(p => p.PaymentCategoryGroupId!.Value).Distinct().ToList();
+        var debtGroupNames = await _db.PaymentCategoryGroups.AsNoTracking()
+            .Where(g => debtGroupIds.Contains(g.Id))
+            .ToDictionaryAsync(g => g.Id, g => g.Name);
+        var composedNames = pcRaw.ToDictionary(p => p.Id, p =>
+            PaymentDocumentsController.ComposeServiceName(
+                p.PaymentCategoryGroupId.HasValue ? debtGroupNames.GetValueOrDefault(p.PaymentCategoryGroupId.Value) : null,
+                p.Name, p.ParametarFrom, p.ParametarTo));
 
         string? makerModel(long vehicleId)
         {
@@ -162,7 +182,9 @@ public class CustomerDebtsController : ControllerBase
                 r.PriceCatalogId, priceCatalog.GetValueOrDefault(r.PriceCatalogId),
                 r.Price, r.VatPercent, r.Note,
                 (byte)r.Origin, r.OriginRequestId, r.OriginTechnicalExamId,
-                r.OrganizationId, r.Paid, r.SettledByLineId, r.CreatedAt);
+                r.OrganizationId, r.Paid, r.SettledByLineId, r.CreatedAt,
+                composedNames.GetValueOrDefault(r.PriceCatalogId),
+                pcRaw.FirstOrDefault(p => p.Id == r.PriceCatalogId)?.PaymentCategoryGroupId);
         }).ToList();
 
         return Ok(new PagedDto<CustomerDebtRow>(page, pageSize, total, items));
@@ -251,6 +273,27 @@ public class CustomerDebtsController : ControllerBase
         if (d == null) return NotFound();
         if (d.Paid) return BadRequest(new { error = "Веќе платена ставка не може да се избрише — потребно е сторно." });
         d.Active = false;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    public record DebtPriceDto(decimal Price);
+
+    /// <summary>Operator price override on an unpaid debt — the legacy grid let the operator
+    /// type the amount directly (e.g. надоместок за животна средина per the current tariff).
+    /// The edited price flows into the bill when the debt gets billed.</summary>
+    [HttpPut("{id:long}/price")]
+    public async Task<IActionResult> UpdatePrice(long id, [FromBody] DebtPriceDto req)
+    {
+        if (req.Price < 0)
+            return BadRequest(new { error = "Цената не може да биде негативна." });
+        var d = await _db.CustomerDebts.FirstOrDefaultAsync(x => x.Id == id);
+        if (d == null) return NotFound();
+        if (!d.Active)
+            return BadRequest(new { error = "Ставката е избришана — цената не може да се менува." });
+        if (d.Paid)
+            return BadRequest(new { error = "Веќе платена ставка не може да се менува — потребно е сторно." });
+        d.Price = req.Price;
         await _db.SaveChangesAsync();
         return NoContent();
     }

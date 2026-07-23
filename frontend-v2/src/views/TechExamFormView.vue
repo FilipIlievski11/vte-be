@@ -10,7 +10,7 @@ import type {
   TechExamOrgLookup, TechExamStatusLookup, TechExamPartLookup, TechExamControllerLookup,
 } from '@/types';
 import Button from 'primevue/button';
-import Card from 'primevue/card';
+import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
@@ -118,9 +118,18 @@ const validTillDisplay = computed(() => {
   return d.toLocaleDateString();
 });
 
-// Pass/fail mirrors backend DerivePass: no lines OR every line "исправен" (status 1).
-const vehicleIsRight = computed(() =>
+// Pass/fail: derived from the detail statuses (backend DerivePass) UNTIL the operator
+// explicitly flips the toggle — then the manual verdict sticks and is sent to the API.
+const derivedPass = computed(() =>
   details.value.length === 0 || details.value.every(d => d.statusId === 1));
+const vehicleIsRight = ref(true);
+const resultTouched = ref(false);
+watch(derivedPass, (v) => { if (!resultTouched.value) vehicleIsRight.value = v; });
+const resultOptions = computed(() => [
+  { label: t('techExam.pass'), value: true },
+  { label: t('techExam.fail'), value: false },
+]);
+function onResultPicked() { resultTouched.value = true; }
 
 const typeOptions = computed(() =>
   types.value.map(x => ({ id: x.id, label: x.code ? `${x.code} · ${x.description}` : x.description })));
@@ -210,6 +219,10 @@ async function loadReport() {
       vehiclePartId: d.vehiclePartId, statusId: d.statusId,
       front: d.front, back: d.back, onLeft: d.onLeft, onRight: d.onRight, note: d.note ?? '',
     }));
+
+    // Резултат: од записот; ако отстапува од изведеното → бил рачно сменет, зачувај го тоа.
+    vehicleIsRight.value = r.vehicleIsRight;
+    resultTouched.value = r.vehicleIsRight !== derivedPass.value;
 
     // Anchor hydration
     selectedRelationId.value = r.customerVehicleRelationId;
@@ -319,6 +332,7 @@ function buildBody(): TechExamWrite {
     technicalExamTypeId: technicalExamTypeId.value!,
     organizationId: organizationId.value!,
     madeDate: toDateOnly(madeDate.value)!,
+    vehicleIsRight: vehicleIsRight.value,
     firstControllerLegacyId: firstControllerLegacyId.value,
     secondControllerLegacyId: secondControllerLegacyId.value,
     explanationNote: explanationNote.value || null,
@@ -398,6 +412,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="techexam-form">
   <div class="page-header">
     <div>
       <h1>
@@ -410,22 +425,16 @@ onMounted(async () => {
         <span class="muted">&nbsp;·&nbsp;{{ t('techExam.validTill') }}: {{ validTillDisplay }}</span>
       </div>
     </div>
-    <div class="actions">
-      <Button :label="t('common.back')" icon="pi pi-arrow-left" severity="secondary" size="small" outlined
-              @click="router.push(isEdit ? `/technical-exams/${props.id}` : '/technical-exams')" />
-      <Button v-if="isEdit" :label="t('common.delete')" icon="pi pi-trash" severity="danger" size="small" outlined @click="remove" />
-      <Button :label="t('common.save')" icon="pi pi-check" size="small" :loading="saving" @click="save" />
-    </div>
   </div>
 
   <div v-if="loading" class="muted pad">{{ t('common.loading') }}…</div>
 
-  <div v-else class="cards-grid">
+  <template v-else>
     <!-- Header -->
-    <Card class="card">
-      <template #title>{{ t('techExam.form.sections.header') }}</template>
-      <template #content>
-        <div class="grid two-col">
+    <div class="card">
+      <div class="card-header">{{ t('techExam.form.sections.header') }}</div>
+      <div class="card-body">
+        <div class="row">
           <div class="field">
             <label>{{ t('techExam.type') }} *</label>
             <Select v-model="technicalExamTypeId" :options="typeOptions" optionLabel="label" optionValue="id"
@@ -436,6 +445,8 @@ onMounted(async () => {
             <Select v-model="organizationId" :options="orgOptions" optionLabel="label" optionValue="id"
                     filter :placeholder="t('techExam.form.pickOrg')" />
           </div>
+        </div>
+        <div class="row">
           <div class="field">
             <label>{{ t('techExam.madeDate') }} *</label>
             <DatePicker v-model="madeDate" dateFormat="yy-mm-dd" showIcon iconDisplay="input" />
@@ -444,6 +455,14 @@ onMounted(async () => {
             <label>{{ t('techExam.validTill') }}</label>
             <div class="val readonly">{{ validTillDisplay }}</div>
           </div>
+          <div class="field">
+            <label>{{ t('techExam.form.result') }}</label>
+            <SelectButton v-model="vehicleIsRight" :options="resultOptions" optionLabel="label" optionValue="value"
+                          :allowEmpty="false" class="result-toggle" @update:modelValue="onResultPicked" />
+            <span class="muted tiny">{{ resultTouched ? t('techExam.form.resultManual') : t('techExam.form.resultAuto') }}</span>
+          </div>
+        </div>
+        <div class="row">
           <div class="field">
             <label>{{ t('techExam.controller1') }}</label>
             <Select v-model="firstControllerLegacyId" :options="controllers" optionLabel="fullName" optionValue="id"
@@ -459,13 +478,13 @@ onMounted(async () => {
             <div class="val readonly mono">{{ regNumber }}</div>
           </div>
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Anchor: client + relation -->
-    <Card class="card">
-      <template #title>{{ t('techExam.form.sections.anchor') }}</template>
-      <template #content>
+    <div class="card">
+      <div class="card-header">{{ t('techExam.form.sections.anchor') }}</div>
+      <div class="card-body">
         <div v-if="!isEdit" class="field">
           <label>{{ t('requests.form.client') }} *</label>
           <div v-if="selectedClient" class="picked">
@@ -502,18 +521,18 @@ onMounted(async () => {
                   :disabled="isEdit" :placeholder="t('requests.form.pickRelation')" />
           <div v-if="!relations.length && selectedClient" class="muted small">{{ t('requests.form.noRelations') }}</div>
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Brake-force grid -->
-    <Card class="card">
-      <template #title>
+    <div class="card">
+      <div class="card-header">
         <button type="button" class="collapse-toggle" @click="brakeCollapsed = !brakeCollapsed">
           <span>{{ t('techExam.measuredValues') }}</span>
           <i class="pi pi-chevron-down chevron" :class="{ collapsed: brakeCollapsed }" />
         </button>
-      </template>
-      <template #content>
+      </div>
+      <div class="card-body">
         <div v-show="!brakeCollapsed">
         <table class="brake-table">
           <thead>
@@ -550,19 +569,19 @@ onMounted(async () => {
           <Textarea v-model="technicalChanges" rows="2" autoResize />
         </div>
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Defects -->
-    <Card class="card">
-      <template #title>
+    <div class="card">
+      <div class="card-header">
         <div class="card-title-row">
           <span>{{ t('techExam.defects') }}</span>
           <span class="count">{{ details.length }}</span>
           <Button :label="t('common.new')" icon="pi pi-plus" size="small" severity="success" @click="addDefect" />
         </div>
-      </template>
-      <template #content>
+      </div>
+      <div class="card-body">
         <table v-if="details.length" class="defects-table">
           <thead>
             <tr>
@@ -592,41 +611,110 @@ onMounted(async () => {
           </tbody>
         </table>
         <div v-else class="muted small">{{ t('techExam.noDefects') }}</div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Notes -->
-    <Card class="card">
-      <template #title>{{ t('techExam.notesSection') }}</template>
-      <template #content>
-        <div class="field">
-          <label>{{ t('techExam.explanationNote') }}</label>
-          <Textarea v-model="explanationNote" rows="2" autoResize />
-        </div>
-        <div class="field">
-          <label>{{ t('techExam.driversWarning') }}</label>
-          <Textarea v-model="driversWarning" rows="2" autoResize />
+    <div class="card">
+      <div class="card-header">{{ t('techExam.notesSection') }}</div>
+      <div class="card-body">
+        <div class="row">
+          <div class="field">
+            <label>{{ t('techExam.explanationNote') }}</label>
+            <Textarea v-model="explanationNote" rows="2" autoResize />
+          </div>
+          <div class="field">
+            <label>{{ t('techExam.driversWarning') }}</label>
+            <Textarea v-model="driversWarning" rows="2" autoResize />
+          </div>
         </div>
         <div class="field">
           <label>{{ t('techExam.note') }}</label>
           <Textarea v-model="note" rows="2" autoResize />
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
+  </template>
+
+  <div class="footer-actions">
+    <Button :label="t('common.back')" icon="pi pi-arrow-left" severity="secondary" size="small" outlined
+            @click="router.push(isEdit ? `/technical-exams/${props.id}` : '/technical-exams')" />
+    <Button v-if="isEdit" :label="t('common.delete')" icon="pi pi-trash" severity="danger" size="small" outlined @click="remove" />
+    <Button :label="t('common.save')" icon="pi pi-check" size="small" :loading="saving" @click="save" />
+  </div>
   </div>
 </template>
 
 <style scoped>
-.cards-grid { display: grid; grid-template-columns: 1fr; gap: 1rem }
-.card { width: 100% }
-.grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem }
-.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .85rem }
-.field label { font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+/* Same v1-style cards as ClientFormView / VehicleFormView. */
+.techexam-form { max-width: 1200px; margin: 0 auto; padding-bottom: 3.5rem; }
+.techexam-form :deep(.page-header) { margin-bottom: 0.75rem; }
+.techexam-form :deep(.page-header h1) { font-size: 1.125rem; letter-spacing: -0.01em; }
+.techexam-form :deep(.page-header .subtitle) { font-size: 0.75rem; }
+.techexam-form :deep(.card + .card) { margin-top: 0.5rem; }
+.techexam-form :deep(.card .card-header) { padding: 0.45rem 0.875rem; font-size: 0.8125rem; font-weight: 600; }
+.techexam-form :deep(.card .card-body) { padding: 0.625rem 0.875rem; }
+.techexam-form :deep(.row) { gap: 0.625rem; }
+.techexam-form :deep(.field) { gap: 0.15rem; margin-bottom: 0.45rem; }
+.techexam-form :deep(.field label) { font-size: 0.75rem; font-weight: 500; color: var(--color-text-secondary); }
+.techexam-form :deep(.p-select),
+.techexam-form :deep(.p-inputtext),
+.techexam-form :deep(.p-datepicker),
+.techexam-form :deep(.p-inputnumber) { width: 100%; }
+.techexam-form :deep(.p-inputtext) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; min-height: auto; }
+.techexam-form :deep(.p-inputnumber-input) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; }
+.techexam-form :deep(.p-textarea) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; min-height: auto; }
+.techexam-form :deep(.p-select-label) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; }
+.techexam-form :deep(.p-select-dropdown) { width: 1.625rem; }
+.techexam-form :deep(.p-checkbox) { transform: scale(0.85); transform-origin: left center; }
+
+/* Brand accent stripe on each card header */
+.techexam-form :deep(.card .card-header) {
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 92%, var(--color-brand-500)) 0%, var(--color-surface) 100%);
+}
+.techexam-form :deep(.card .card-header)::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--color-brand-500); border-radius: 0 2px 2px 0;
+}
+.techexam-form :deep(.p-inputtext:focus),
+.techexam-form :deep(.p-inputnumber-input:focus),
+.techexam-form :deep(.p-textarea:focus),
+.techexam-form :deep(.p-select:not(.p-disabled).p-focus) {
+  outline: none;
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-500) 25%, transparent);
+}
+
+.footer-actions {
+  position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
+  padding: 0.625rem 2rem;
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--color-border);
+  z-index: 5;
+}
+
+/* Резултат toggle: зелено за исправен, црвено за неисправен */
+.result-toggle :deep(.p-togglebutton) { padding: 0.3rem 0.9rem; font-size: 0.8125rem; }
+.result-toggle :deep(.p-togglebutton:first-child.p-togglebutton-checked) {
+  background: var(--p-green-500, #22c55e); border-color: var(--p-green-500, #22c55e); color: #fff;
+}
+.result-toggle :deep(.p-togglebutton:first-child.p-togglebutton-checked .p-togglebutton-content) { background: transparent; color: #fff; }
+.result-toggle :deep(.p-togglebutton:last-child.p-togglebutton-checked) {
+  background: var(--p-red-500, #ef4444); border-color: var(--p-red-500, #ef4444); color: #fff;
+}
+.result-toggle :deep(.p-togglebutton:last-child.p-togglebutton-checked .p-togglebutton-content) { background: transparent; color: #fff; }
+
+.field { display: flex; flex-direction: column; }
 .field.span-full { grid-column: 1 / -1 }
-.val.readonly { padding: .45rem .25rem; font-size: .9rem }
+.val.readonly { padding: .3rem .25rem; font-size: .8125rem }
 .mono { font-family: monospace }
 .muted { color: var(--p-text-muted-color) }
 .small { font-size: .75rem }
+.tiny { font-size: .68rem }
 .mt { margin-top: .75rem }
 .pad { padding: 1rem }
 .subtitle { display: flex; align-items: center; gap: .4rem; font-size: .85rem }

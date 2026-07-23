@@ -8,6 +8,7 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
+import InputNumber from 'primevue/inputnumber';
 import { useToast } from 'primevue/usetoast';
 import { printFiscalForDocument } from '@/fiscal/fiscal';
 
@@ -46,6 +47,51 @@ async function payInstallment(seq: number) {
       detail: e?.response?.data?.error ?? e?.message, life: 4500 });
   } finally {
     payingSeq.value = null;
+  }
+}
+
+// ---- Inline line-price editing (legacy bill grid let the operator change the price) ----
+const editLineId = ref<number | null>(null);
+const editPrice = ref<number | null>(null);
+const savingPrice = ref(false);
+function beginEditPrice(line: { id: number; unitPrice: number }) {
+  if (bill.value?.stornoed) return;
+  editLineId.value = line.id;
+  editPrice.value = line.unitPrice;
+}
+function cancelEditPrice() { editLineId.value = null; editPrice.value = null; }
+async function savePrice() {
+  if (editLineId.value == null || editPrice.value == null || savingPrice.value) return;
+  savingPrice.value = true;
+  try {
+    await api.put(`/payment-documents/${props.id}/lines/${editLineId.value}/price`, { unitPrice: editPrice.value });
+    cancelEditPrice();
+    await load();
+    toast.add({ severity: 'success', summary: t('payments.priceSaved'), life: 2500 });
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('payments.priceSaveFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4500 });
+  } finally {
+    savingPrice.value = false;
+  }
+}
+
+// ---- СМЕТКОПОТВРДА print + платено/неплатено toggle ----
+function openReceiptPrint() {
+  const href = router.resolve({ name: 'payment-receipt-print', params: { id: props.id } }).href;
+  window.open(href, '_blank');
+}
+const paidBusy = ref(false);
+async function togglePaid() {
+  if (!bill.value || paidBusy.value) return;
+  paidBusy.value = true;
+  try {
+    await api.put(`/payment-documents/${props.id}/paid`, { paid: !bill.value.paid });
+    await load();
+    toast.add({ severity: 'success', summary: t('payments.statusSaved'), life: 2500 });
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('payments.statusSaveFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4500 });
+  } finally {
+    paidBusy.value = false;
   }
 }
 
@@ -124,8 +170,15 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
       <div class="head-right" v-if="bill">
         <Tag v-if="bill.fiscalPrintedAt" :value="t('fiscal.printedTag')" severity="info" class="big-tag"
           v-tooltip.bottom="fmtDateTime(bill.fiscalPrintedAt)" />
+        <Button :label="t('payments.printReceipt')" icon="pi pi-file" size="small" outlined
+          @click="openReceiptPrint" />
         <Button :label="t('fiscal.printReceipt')" icon="pi pi-print" size="small"
           :loading="fiscalBusy" @click="printFiscal" />
+        <Button v-if="!bill.stornoed" size="small" outlined
+          :severity="bill.paid ? 'warn' : 'success'"
+          :icon="bill.paid ? 'pi pi-times-circle' : 'pi pi-check-circle'"
+          :label="bill.paid ? t('payments.markUnpaid') : t('payments.markPaid')"
+          :loading="paidBusy" @click="togglePaid" />
         <Tag :value="statusTag.label" :severity="statusTag.severity" class="big-tag" />
       </div>
     </div>
@@ -197,8 +250,19 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
           <Column :header="t('payments.col.qty')" style="width:60px; text-align:right">
             <template #body="{ data }">{{ data.quantity }}</template>
           </Column>
-          <Column :header="t('payments.col.unitPrice')" style="width:110px; text-align:right">
-            <template #body="{ data }"><span class="mono">{{ fmtMoney(data.unitPrice) }}</span></template>
+          <Column :header="t('payments.col.unitPrice')" style="width:130px; text-align:right">
+            <template #body="{ data }">
+              <span v-if="editLineId === data.id" class="price-edit-wrap">
+                <InputNumber v-model="editPrice" :minFractionDigits="2" :maxFractionDigits="2" :min="0"
+                             inputClass="price-edit-input" autofocus
+                             @keydown.enter="savePrice" @keydown.esc="cancelEditPrice" />
+                <Button icon="pi pi-check" size="small" text severity="success" :loading="savingPrice" @click="savePrice" />
+                <Button icon="pi pi-times" size="small" text severity="secondary" :disabled="savingPrice" @click="cancelEditPrice" />
+              </span>
+              <span v-else class="mono price-cell" :class="{ editable: !bill?.stornoed && data.active }"
+                    :title="!bill?.stornoed && data.active ? t('payments.editPriceHint') : ''"
+                    @click="!bill?.stornoed && data.active && beginEditPrice(data)">{{ fmtMoney(data.unitPrice) }}</span>
+            </template>
           </Column>
           <Column :header="t('payments.col.vat')" style="width:75px; text-align:right">
             <template #body="{ data }">{{ data.vatPercent }} %</template>
@@ -345,6 +409,12 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
 .field .val { font-size: .9rem; word-break: break-word; }
 .plate { display: inline-block; font-family: monospace; font-weight: 600; padding-right: .5rem; }
 .item-name { font-weight: 500; }
+
+.price-cell.editable { cursor: pointer; border-bottom: 1px dashed var(--p-surface-400); }
+.price-cell.editable:hover { color: var(--p-primary-600); border-bottom-color: var(--p-primary-400); }
+.price-edit-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.price-edit-wrap :deep(.price-edit-input) { width: 84px; padding: 2px 6px; text-align: right; font-family: monospace; }
+.price-edit-wrap :deep(.p-button) { width: 26px; height: 26px; padding: 0; }
 
 .totals-row {
   display: flex; justify-content: flex-end; align-items: baseline; gap: .75rem;

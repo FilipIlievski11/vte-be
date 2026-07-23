@@ -625,7 +625,10 @@ public class TechnicalExamReportsController : ControllerBase
         double? AxisParkingLeft, double? AxisParkingRight, double? AxisParkingGj, double? AxisParkingLeftRightDiff, double? AxisParkingCoefficient,
         double? Weight, double? EffectOfWorkingBrakeEmpty, double? EffectOfWorkingBrakeFull, double? EffectOfSecondaryBrake, double? EffectOfParkingBrake,
         double? SpeedOfTurns, double? Co, double? EngineRpm, double? CoPlusTurns, double? Lambda, double? Pinpoints, double? Noise, double? EngineOilTemp,
-        IReadOnlyList<TechExamDetailWriteDto>? Details);
+        IReadOnlyList<TechExamDetailWriteDto>? Details,
+        // Explicit operator verdict (исправен/неисправен). Null → derive from the
+        // detail statuses (DerivePass), the historical behavior.
+        bool? VehicleIsRight = null);
 
     private static void ApplyMeasurements(TechnicalExamReport r, TechExamWriteDto d)
     {
@@ -689,7 +692,7 @@ public class TechnicalExamReportsController : ControllerBase
             ValidTillDate = validTill,
             FirstControllerLegacyId = firstCtrl,
             SecondControllerLegacyId = dto.SecondControllerLegacyId,
-            VehicleIsRight = DerivePass(dto.Details),
+            VehicleIsRight = dto.VehicleIsRight ?? DerivePass(dto.Details),
             ExplanationNote = dto.ExplanationNote,
             DriversWarning = dto.DriversWarning,
             Note = dto.Note,
@@ -763,7 +766,7 @@ public class TechnicalExamReportsController : ControllerBase
         report.DriversWarning = dto.DriversWarning;
         report.Note = dto.Note;
         report.TechnicalChanges = dto.TechnicalChanges;
-        report.VehicleIsRight = DerivePass(dto.Details);
+        report.VehicleIsRight = dto.VehicleIsRight ?? DerivePass(dto.Details);
         report.ModifiedAt = DateTime.UtcNow;
         ApplyMeasurements(report, dto);
 

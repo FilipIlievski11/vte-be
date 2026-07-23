@@ -60,9 +60,28 @@ public class PricingEvaluator : IPricingEvaluator
                      && (p.CommunityId == null || p.CommunityId == communityId)
                      && (p.PriceCompanyId == null || p.PriceCompanyId == companyId))
             .Select(p => new {
-                p.Id, p.BasePrice, p.VatRateId, p.VehicleField, p.ParametarFrom, p.ParametarTo
+                p.Id, p.BasePrice, p.VatRateId, p.VehicleField, p.ParametarFrom, p.ParametarTo,
+                p.AgeFrom, p.AgeTo, p.VehicleCategoryFilter
             })
             .ToListAsync(ct);
+
+        // Vehicle age in whole calendar years (2021 vehicle in 2026 → 5 → the 0–5 band),
+        // as registration practice reads „старост". Null when the date is unknown.
+        int? ageYears = vehicle?.ManufactureDate is DateTime md ? DateTime.Today.Year - md.Year : null;
+
+        // Registration-category code (M1/M2/M3/N1…) — resolved once, only when some rule
+        // filters on it. This splits e.g. минибуси (M2) from автобуси (M3), which share the
+        // same PAYMENT category (5) — Сл. весник 89/2022 tariffs them differently.
+        string? vehCategoryCode = null;
+        if (vehicle?.CategoryId is short regCatId
+            && candidates.Any(c => !string.IsNullOrWhiteSpace(c.VehicleCategoryFilter)))
+        {
+            vehCategoryCode = await _db.VehicleCategories.AsNoTracking()
+                .Where(x => x.Id == regCatId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(ct);
+            vehCategoryCode = vehCategoryCode?.Trim();
+        }
 
         // Step 2: filter ranged rules client-side (need reflection over Vehicle).
         var matched = new List<(int Id, decimal Price, int VatRateId)>();
@@ -70,6 +89,26 @@ public class PricingEvaluator : IPricingEvaluator
 
         foreach (var c in candidates)
         {
+            // Registration-category filter (CSV of codes, e.g. "M2" / "M3"). Unknown code
+            // on the vehicle → the rule can't match; operator handles it manually.
+            if (!string.IsNullOrWhiteSpace(c.VehicleCategoryFilter))
+            {
+                if (string.IsNullOrWhiteSpace(vehCategoryCode)) continue;
+                var codeMatch = c.VehicleCategoryFilter
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Any(code => code.Equals(vehCategoryCode, StringComparison.OrdinalIgnoreCase));
+                if (!codeMatch) continue;
+            }
+
+            // Age condition (Сл. весник 89/2022 eco tariff): rule fires only when the
+            // vehicle's age falls in [AgeFrom, AgeTo]. Unknown manufacture date → the
+            // rule can't match; the operator handles that vehicle manually.
+            if (c.AgeFrom != null || c.AgeTo != null)
+            {
+                if (ageYears is null) continue;
+                if (ageYears < (c.AgeFrom ?? 0) || ageYears > (c.AgeTo ?? int.MaxValue)) continue;
+            }
+
             if (string.IsNullOrWhiteSpace(c.VehicleField))
             {
                 // Fixed-fee rule — always applies.

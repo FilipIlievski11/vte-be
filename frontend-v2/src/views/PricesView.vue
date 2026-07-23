@@ -62,9 +62,17 @@ function blank(): PriceCatalog {
     vehiclePaymentCategoryId: typeof selectedCatId.value === 'number' ? selectedCatId.value : null,
     communityId: null, priceCompanyId: null, paymentCategoryGroupId: null,
     vehicleField: null, parametarFrom: null, parametarTo: null,
+    ageFrom: null, ageTo: null,
     vehicleCategoryFilter: null, bankAccount: null, paymentForm: null,
     active: true,
   };
+}
+
+// „возраст 11–20 год." / „возраст над 30 год." — за мета-линијата под името.
+function fmtAge(from: number | null, to: number | null): string {
+  if (from == null && to == null) return '';
+  if (to == null) return `возраст над ${(from ?? 1) - 1} год.`;
+  return `возраст ${from ?? 0}–${to} год.`;
 }
 
 // --- computed ---
@@ -197,6 +205,7 @@ async function save() {
     communityId: e.communityId, priceCompanyId: e.priceCompanyId,
     paymentCategoryGroupId: e.paymentCategoryGroupId, vehicleField: e.vehicleField,
     parametarFrom: e.parametarFrom, parametarTo: e.parametarTo,
+    ageFrom: e.ageFrom, ageTo: e.ageTo,
     vehicleCategoryFilter: e.vehicleCategoryFilter, bankAccount: e.bankAccount,
     paymentForm: e.paymentForm, active: e.active,
   };
@@ -325,13 +334,15 @@ onMounted(async () => {
           <template #body="{ data }">
             <div class="name-cell">
               <div class="nm">{{ data.name }}</div>
-              <div v-if="data.code || data.vehicleField || data.parametarFrom != null || data.parametarTo != null"
+              <div v-if="data.code || data.vehicleField || data.parametarFrom != null || data.parametarTo != null
+                         || data.ageFrom != null || data.ageTo != null || data.vehicleCategoryFilter"
                    class="muted small">
                 <span v-if="data.code" class="code-chip">{{ data.code }}</span>
                 <span v-if="data.vehicleField">{{ data.vehicleField }}</span>
                 <span v-if="fmtRange(data.parametarFrom, data.parametarTo)">
-                  {{ data.vehicleField ? ' · ' : '' }}{{ fmtRange(data.parametarFrom, data.parametarTo) }}
-                </span>
+                  {{ data.vehicleField ? ' · ' : '' }}{{ fmtRange(data.parametarFrom, data.parametarTo) }}</span>
+                <span v-if="fmtAge(data.ageFrom, data.ageTo)"> · {{ fmtAge(data.ageFrom, data.ageTo) }}</span>
+                <span v-if="data.vehicleCategoryFilter"> · {{ data.vehicleCategoryFilter }}</span>
               </div>
             </div>
           </template>
@@ -421,6 +432,15 @@ onMounted(async () => {
       <div class="field">
         <label>{{ t('prices.form.parametarTo') }}</label>
         <InputNumber v-model="editing.parametarTo as any" mode="decimal" :maxFractionDigits="3" />
+      </div>
+      <div class="field">
+        <label>{{ t('prices.form.ageFrom') }}</label>
+        <InputNumber v-model="editing.ageFrom as any" :min="0" :useGrouping="false" />
+      </div>
+      <div class="field">
+        <label>{{ t('prices.form.ageTo') }}</label>
+        <InputNumber v-model="editing.ageTo as any" :min="0" :useGrouping="false"
+                     :placeholder="t('prices.form.ageToHelp')" />
       </div>
       <div class="field col-2">
         <label>{{ t('prices.form.vehicleCategoryFilter') }}</label>

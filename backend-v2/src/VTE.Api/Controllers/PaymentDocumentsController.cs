@@ -267,7 +267,9 @@ public class PaymentDocumentsController : ControllerBase
             }
         }
 
-        // Lines with price-catalog name snapshotted.
+        // Lines with the LEGACY-composed service name: "{Category} {Item} {Parametar}" —
+        // e.g. "Црвен крст за Патнички возила Црвен крст" — exactly what the legacy
+        // bill grid displayed (item names already start with "за ...").
         var linesRaw = await _db.PaymentDocumentLines.AsNoTracking()
             .Where(l => l.PaymentDocumentId == d.Id)
             .OrderBy(l => l.Id)
@@ -275,9 +277,22 @@ public class PaymentDocumentsController : ControllerBase
         var priceCatalogIds = linesRaw.Select(l => l.PriceCatalogId).Distinct().ToList();
         var priceCatalog = await _db.PriceCatalogs.AsNoTracking()
             .Where(p => priceCatalogIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.Name);
+            .Select(p => new { p.Id, p.Name, p.PaymentCategoryGroupId, p.ParametarFrom, p.ParametarTo })
+            .ToDictionaryAsync(p => p.Id);
+        var groupIds = priceCatalog.Values
+            .Where(p => p.PaymentCategoryGroupId.HasValue)
+            .Select(p => p.PaymentCategoryGroupId!.Value).Distinct().ToList();
+        var groupNames = await _db.PaymentCategoryGroups.AsNoTracking()
+            .Where(g => groupIds.Contains(g.Id))
+            .ToDictionaryAsync(g => g.Id, g => g.Name);
+        string? composedName(int pcId)
+        {
+            if (!priceCatalog.TryGetValue(pcId, out var p)) return null;
+            var group = p.PaymentCategoryGroupId.HasValue ? groupNames.GetValueOrDefault(p.PaymentCategoryGroupId.Value) : null;
+            return ComposeServiceName(group, p.Name, p.ParametarFrom, p.ParametarTo);
+        }
         var lines = linesRaw.Select(l => new PaymentLineDto(
-            l.Id, l.PriceCatalogId, priceCatalog.GetValueOrDefault(l.PriceCatalogId),
+            l.Id, l.PriceCatalogId, composedName(l.PriceCatalogId),
             l.UnitPrice, l.VatPercent, l.Discount, l.Quantity,
             l.Note, l.PrePaid, l.PrePaidNote,
             l.CustomerDebtId, l.Active)).ToList();
@@ -575,7 +590,7 @@ public class PaymentDocumentsController : ControllerBase
             var rsb = new System.Text.StringBuilder();
             rsb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
             rsb.Append("'1").Append("Uplata po rata").Append('\t').Append((char)194)
-               .Append(((double)(rata.PaidAmount ?? rata.Amount)).ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+               .Append(FormatFiscal(FicalRound((double)(rata.PaidAmount ?? rata.Amount))))
                .Append("\r\n");
             rsb.Append(" 5 Smetka\t\r\n");
             rsb.Append(doc.Stornoed ? "%V" : "%8").Append("\r\n");
@@ -593,28 +608,50 @@ public class PaymentDocumentsController : ControllerBase
         if (type is not { IsCash: true })
             return Ok(new FiscalFileDto(false, "Фискална сметка се печати само за готовинско плаќање.", "", "", doc.FiscalPrintedAt));
 
+        // Legacy SP GetPaymentDocumentForFiscalPrintByIdDocument: active lines only,
+        // PrePayed excluded, and the line's NAME on the receipt is the payment CATEGORY
+        // (PaymentCategories.CategoryName), resolved through the catalog. The inner joins
+        // silently drop lines whose category chain is broken — kept identical here.
         var lines = await (
             from l in _db.PaymentDocumentLines.AsNoTracking()
             join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
-            where l.PaymentDocumentId == id && l.Active
+            join g in _db.PaymentCategoryGroups.AsNoTracking() on pc.PaymentCategoryGroupId equals g.Id
+            where l.PaymentDocumentId == id && l.Active && !l.PrePaid
             orderby l.Id
-            select new { l.UnitPrice, l.Discount, l.Quantity, l.VatPercent, CatalogName = pc.Name }
+            select new { l.UnitPrice, l.Discount, l.Quantity, l.VatPercent, CategoryName = g.Name }
         ).ToListAsync();
 
-        var total = lines.Sum(l => Math.Round((double)l.UnitPrice * l.Quantity * (1 - l.Discount / 100), 0));
-        if (lines.Count == 0 || total == 0)
+        // Legacy folds same-category rows into ONE receipt line (PaymentDocumentFiscalPrintList
+        // .ContainsP/AddPrice): the first row keeps its raw price, discount and VAT; every
+        // subsequent same-name row adds its price PRE-ROUNDED through FicalRound. Folding keys
+        // on the category NAME, so per-company duplicate category ids merge — as in legacy.
+        var folded = new List<FiscalFold>();
+        foreach (var l in lines)
+        {
+            var raw = (double)l.UnitPrice * l.Quantity;
+            var f = folded.Find(x => string.Equals(x.Name, l.CategoryName, StringComparison.Ordinal));
+            if (f == null)
+                folded.Add(new FiscalFold { Name = l.CategoryName, Accum = raw, Discount = l.Discount, VatPercent = l.VatPercent });
+            else
+                f.Accum += FicalRound(raw);
+        }
+
+        // Zero gate — legacy GetTotalAmmount over the folded rows (FicalRound'ed price,
+        // first-row discount, no final whole-denar rounding).
+        var total = folded.Sum(f => { var p = FicalRound(f.Accum); return p - p * f.Discount / 100; });
+        if (folded.Count == 0 || total == 0)
             return Ok(new FiscalFileDto(false, "Сметката нема износ за фискализација.", "", "", doc.FiscalPrintedAt));
 
         var sb = new System.Text.StringBuilder();
         // header: open receipt (storno opens a storno receipt)
         sb.Append(doc.Stornoed ? " U1,0000,1" : " 01,0000,1").Append("\r\n");
 
-        for (var i = 0; i < lines.Count; i++)
+        for (var i = 0; i < folded.Count; i++)
         {
-            var l = lines[i];
+            var f = folded[i];
             // VAT class byte (CP1251 А/Б/В): 18% → 192, 5% → 193, 0% → 194.
             // Legacy silently truncated the receipt on an unknown rate; we refuse loudly.
-            var vatByte = l.VatPercent switch
+            var vatByte = f.VatPercent switch
             {
                 18 => (byte)192,
                 5  => (byte)193,
@@ -622,16 +659,18 @@ public class PaymentDocumentsController : ControllerBase
                 _  => (byte)0,
             };
             if (vatByte == 0)
-                return BadRequest(new { error = $"Ставка со непозната ДДВ стапка ({l.VatPercent}%) — не може да се фискализира." });
+                return BadRequest(new { error = $"Ставка со непозната ДДВ стапка ({f.VatPercent}%) — не може да се фискализира." });
 
-            // discount applied and rounded to whole denars (legacy Math.Round semantics)
-            var price = Math.Round((double)l.UnitPrice * (1 - l.Discount / 100), 0) * l.Quantity;
+            // Legacy: cenaSoPopust = Math.Round(P − P·d/100, 0) where P = FicalRound(folded sum)
+            // and d = the first row's discount — banker's rounding, matching VB Math.Round.
+            var p = FicalRound(f.Accum);
+            var price = Math.Round(p - p * f.Discount / 100, 0);
 
             sb.Append(i % 2 == 0 ? "'1" : " 1")                       // legacy alternates the marker
-              .Append(Left(ToLat(l.CatalogName), 24))
+              .Append(Left(ToLat(f.Name), 24))
               .Append('\t')
               .Append((char)vatByte)
-              .Append(price.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+              .Append(FormatFiscal(price))
               .Append("\r\n");
         }
 
@@ -664,6 +703,235 @@ public class PaymentDocumentsController : ControllerBase
     }
 
     private static string Left(string s, int n) => s.Length <= n ? s : s[..n];
+
+    /// <summary>Legacy bill-grid service name: "{CategoryName} {ItemName} {PrametarName}"
+    /// with the {0}/{1} range placeholders substituted (66.1 renders as "66,1" — comma
+    /// decimals, like the legacy MK-culture grid). PriceCatalog.Name was imported as
+    /// "ItemName — PrametarName", so it splits on the em-dash separator.</summary>
+    internal static string? ComposeServiceName(string? groupName, string? catalogName, double? from, double? to)
+    {
+        static string num(double v) =>
+            v % 1 == 0 ? ((long)v).ToString() : v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
+        string fill(string s)
+        {
+            if (s.Contains("{0}")) s = s.Replace("{0}", from.HasValue ? num(from.Value) : "");
+            if (s.Contains("{1}")) s = s.Replace("{1}", to.HasValue ? num(to.Value) : "");
+            return s;
+        }
+        var idx = (catalogName ?? "").IndexOf(" — ", StringComparison.Ordinal);
+        var item = idx >= 0 ? catalogName![..idx] : (catalogName ?? "");
+        var param = idx >= 0 ? catalogName![(idx + 3)..] : "";
+        if (item == "(no item)") item = "";
+        var parts = new[] { groupName?.Trim(), item.Trim(), fill(param).Trim() }
+            .Where(s => !string.IsNullOrEmpty(s));
+        var composed = string.Join(' ', parts);
+        return composed.Length > 0 ? composed : catalogName;
+    }
+
+    public record LinePriceDto(decimal UnitPrice);
+
+    public record PaidDto(bool Paid);
+
+    /// <summary>Operator toggle платено/неплатено on a bill (legacy Payed flag).</summary>
+    [HttpPut("{id:long}/paid")]
+    public async Task<IActionResult> SetPaid(long id, [FromBody] PaidDto req)
+    {
+        var doc = await _db.PaymentDocuments.FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+        if (doc.Stornoed)
+            return BadRequest(new { error = "Сметката е сторнирана — статусот не може да се менува." });
+        doc.Paid = req.Paid;
+        doc.ModifiedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // ---- СМЕТКОПОТВРДА (legacy A4-landscape receipt, two copies side by side) ----
+
+    public record ReceiptLineDto(string? Name, double BezDdv, double Popust, double Ddv, double Cena);
+    public record ReceiptPrintDto(
+        long Id, string DocumentNumber, DateTime IssueDate, string? PaymentTypeName,
+        string? OrgName, string? OrgTaxNumber, string? OrgAddress, string? OrgPhone,
+        string? ClientName, string? ClientAddress, string? ClientCityName,
+        string? VehicleCategoryLabel, string? Plate, string? MakerModel, double? WorkingCapacityCc,
+        string? Vin, double? PowerKw, string? EngineNumber, double CarryKg,
+        IReadOnlyList<ReceiptLineDto> Lines,
+        double TotalBezDdv, double TotalDdv, double Total,
+        string? ReferentName, string? Note, bool Paid, bool Stornoed);
+
+    /// <summary>Print bundle for СМЕТКОПОТВРДА — the legacy landscape receipt. Per-line
+    /// money mirrors legacy PrintPaymentDocumetnByIdDocumetnInfo: everything runs through
+    /// FicalRound; ЦЕНА БЕЗ ДДВ = FicalRound(soPopust/(1+ddv/100)), ДДВ = FicalRound(
+    /// soPopust·ddv/(100+ddv)); line names are the payment CATEGORY (as on the fiscal).</summary>
+    [HttpGet("{id:long}/receipt-print")]
+    public async Task<ActionResult<ReceiptPrintDto>> ReceiptPrint(long id)
+    {
+        var d = await _db.PaymentDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        if (d == null) return NotFound();
+
+        var type = await _db.PaymentTypes.AsNoTracking()
+            .Where(t => t.Id == d.PaymentTypeId).Select(t => t.Name).FirstOrDefaultAsync();
+        var org = await _db.TechnicalExamOrganizations.AsNoTracking()
+            .Where(o => o.Id == d.OrganizationId)
+            .Select(o => new { o.Name, o.TaxNumber, o.Address, o.Phone })
+            .FirstOrDefaultAsync();
+
+        // Client + vehicle through the relation.
+        string? clientName = null, clientAddress = null, clientCity = null;
+        string? catLabel = null, plate = null, makerModel = null, vin = null, engineNo = null;
+        double? capacity = null, power = null; double carry = 0;
+        var rel = await _db.ClientVehicleRelations.AsNoTracking()
+            .Where(r => r.Id == d.CustomerVehicleRelationId)
+            .Select(r => new { r.ClientId, r.VehicleId })
+            .FirstOrDefaultAsync();
+        if (rel != null)
+        {
+            var c = await _db.Clients.AsNoTracking().Where(x => x.Id == rel.ClientId)
+                .Select(x => new { x.FirstName, x.MiddleName, x.LastName, x.Address, x.CityId })
+                .FirstOrDefaultAsync();
+            if (c != null)
+            {
+                var n = string.Join(' ', new[] { c.FirstName, c.MiddleName, c.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                clientName = n.Length > 0 ? n : null;
+                clientAddress = c.Address;
+                if (c.CityId.HasValue)
+                    clientCity = await _db.Cities.AsNoTracking().Where(x => x.Id == c.CityId.Value)
+                        .Select(x => x.Name).FirstOrDefaultAsync();
+            }
+            if (rel.VehicleId.HasValue)
+            {
+                var v = await _db.Vehicles.AsNoTracking().Where(x => x.Id == rel.VehicleId.Value)
+                    .Select(x => new
+                    {
+                        x.Plate, x.Vin, x.EngineNumber, x.EnginePowerKw, x.EngineWorkingCapacityCc,
+                        x.MaxAllowedWeightKg, x.CategoryId, x.ModelId,
+                    })
+                    .FirstOrDefaultAsync();
+                if (v != null)
+                {
+                    plate = v.Plate; vin = v.Vin; engineNo = v.EngineNumber;
+                    power = v.EnginePowerKw; capacity = v.EngineWorkingCapacityCc;
+                    carry = v.MaxAllowedWeightKg ?? 0;
+                    if (v.CategoryId.HasValue)
+                    {
+                        var vc = await _db.VehicleCategories.AsNoTracking()
+                            .Where(x => x.Id == v.CategoryId.Value)
+                            .Select(x => new { x.Code, x.Name }).FirstOrDefaultAsync();
+                        if (vc != null)
+                            catLabel = string.Join(' ', new[] { vc.Code, vc.Name?.ToUpperInvariant() }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                    }
+                    if (v.ModelId.HasValue)
+                    {
+                        var m = await _db.VehicleModels.AsNoTracking().Where(x => x.Id == v.ModelId.Value)
+                            .Select(x => new { x.Name, x.MakerId }).FirstOrDefaultAsync();
+                        if (m != null)
+                        {
+                            var maker = await _db.VehicleMakers.AsNoTracking()
+                                .Where(x => x.Id == m.MakerId).Select(x => x.Name).FirstOrDefaultAsync();
+                            makerModel = string.Join(", ", new[] { maker, m.Name }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Lines: category name + FicalRound money (legacy PrintPaymentDocumetnByIdDocumetnInfo).
+        var linesRaw = await (
+            from l in _db.PaymentDocumentLines.AsNoTracking()
+            join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
+            where l.PaymentDocumentId == d.Id && l.Active
+            orderby l.Id
+            select new { l.UnitPrice, l.Quantity, l.Discount, l.VatPercent, pc.Name, pc.PaymentCategoryGroupId }
+        ).ToListAsync();
+        var rGroupIds = linesRaw.Where(x => x.PaymentCategoryGroupId.HasValue)
+            .Select(x => x.PaymentCategoryGroupId!.Value).Distinct().ToList();
+        var rGroups = await _db.PaymentCategoryGroups.AsNoTracking()
+            .Where(g => rGroupIds.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.Name);
+
+        var lines = new List<ReceiptLineDto>();
+        foreach (var l in linesRaw)
+        {
+            var soPopust = (double)l.UnitPrice * l.Quantity * (1 - l.Discount / 100);
+            var cena = FicalRound(soPopust);
+            var bezDdv = FicalRound(soPopust / (1 + l.VatPercent / 100));
+            var ddv = FicalRound(soPopust * l.VatPercent / (100 + l.VatPercent));
+            var popust = FicalRound((double)l.UnitPrice * l.Quantity * l.Discount / 100);
+            var name = l.PaymentCategoryGroupId.HasValue
+                ? rGroups.GetValueOrDefault(l.PaymentCategoryGroupId.Value)?.Trim() ?? l.Name
+                : l.Name;
+            lines.Add(new ReceiptLineDto(name, bezDdv, popust, ddv, cena));
+        }
+
+        string? referent = null;
+        if (!string.IsNullOrEmpty(d.CreatedByUserId))
+            referent = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == d.CreatedByUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+
+        return Ok(new ReceiptPrintDto(
+            d.Id, d.DocumentNumber, d.IssueDate, type?.Trim(),
+            org?.Name, org?.TaxNumber, org?.Address, org?.Phone,
+            clientName, clientAddress, clientCity,
+            catLabel, plate, makerModel, capacity,
+            vin, power, engineNo, carry,
+            lines,
+            lines.Sum(x => x.BezDdv), lines.Sum(x => x.Ddv), lines.Sum(x => x.Cena),
+            referent, d.Note, d.Paid, d.Stornoed));
+    }
+
+    /// <summary>Operator price override on a bill line — legacy allowed editing the price
+    /// cell directly in the bill grid. Touches ONLY this bill: the originating debt keeps
+    /// its historic price, and the fiscal file (composed at print time) picks up the new
+    /// value automatically.</summary>
+    [HttpPut("{id:long}/lines/{lineId:long}/price")]
+    public async Task<IActionResult> UpdateLinePrice(long id, long lineId, [FromBody] LinePriceDto req)
+    {
+        if (req.UnitPrice < 0)
+            return BadRequest(new { error = "Цената не може да биде негативна." });
+        var doc = await _db.PaymentDocuments.FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+        if (doc.Stornoed)
+            return BadRequest(new { error = "Сметката е сторнирана — цената не може да се менува." });
+        var line = await _db.PaymentDocumentLines.FirstOrDefaultAsync(l => l.Id == lineId && l.PaymentDocumentId == id);
+        if (line == null) return NotFound();
+        if (!line.Active)
+            return BadRequest(new { error = "Ставката е избришана — цената не може да се менува." });
+
+        line.UnitPrice = req.UnitPrice;
+        doc.ModifiedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>One folded fiscal-receipt line — legacy PaymentDocumentFiscalPrintInfo:
+    /// price accumulates per category name; discount and VAT stay from the FIRST row.</summary>
+    private sealed class FiscalFold
+    {
+        public string Name = string.Empty;
+        public double Accum;
+        public double Discount;
+        public double VatPercent;
+    }
+
+    /// <summary>Legacy VTE.Library RoundHelper.FicalRound, ported verbatim: the fraction
+    /// (pre-rounded to 2 decimals, banker's) goes DOWN at ≤ 0.49 and UP above — unlike
+    /// banker's whole-denar rounding, x.50 always rounds up. Negative fractions fell
+    /// through the legacy Select Case and returned 0; prices here are never negative.</summary>
+    private static double FicalRound(double value)
+    {
+        var frac = Math.Round(value - Math.Truncate(value), 2);
+        if (frac >= 0 && frac <= 0.49) return Math.Truncate(value);
+        if (frac > 0.49) return Math.Truncate(value) + 1;
+        return 0;
+    }
+
+    /// <summary>Legacy VB FormatNumber(x, 2, IncludeLeadingDigit:=False, GroupDigits:=False)
+    /// with the "," → "." replace: two decimals, no thousands separator, and values below 1
+    /// print WITHOUT the leading zero (0 → ".00").</summary>
+    private static string FormatFiscal(double value)
+    {
+        var s = value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        return s.StartsWith("0.", StringComparison.Ordinal) ? s[1..] : s;
+    }
 
     /// <summary>Macedonian Cyrillic → Latin transliteration, ported from the legacy
     /// KondnaTastaturaModule.ToLat (incl. digraphs). Fixes the legacy off-by-one that

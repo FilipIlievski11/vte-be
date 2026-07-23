@@ -58,6 +58,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    // СМЕТКОПОТВРДА (legacy landscape receipt, two copies).
+    path: '/payments/:id/receipt-print',
+    name: 'payment-receipt-print',
+    component: () => import('@/views/print/PaymentReceiptPrint.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
     // Барање за одобрение (legacy rptBaranjeZaOdobrenieZaTugoVozilo).
     path: '/vehicle-permissions/:id/request-print',
     name: 'vehicle-permission-request-print',

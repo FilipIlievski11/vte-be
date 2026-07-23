@@ -30,9 +30,10 @@ const catalog: TemplateEntry[] = [
   { code: 'idl-permit',        nameKey: 'idlPermit',   group: 'idl',        routeName: 'idl-permit' },
   { code: 'perm-cert',         nameKey: 'permCert',    group: 'permission', routeName: 'vehicle-permission-print' },
   { code: 'perm-req',          nameKey: 'permReq',     group: 'permission', routeName: 'vehicle-permission-request-print' },
+  { code: 'smetko',            nameKey: 'smetko',      group: 'payments',   routeName: 'payment-receipt-print' },
 ];
 
-const groups = ['requests', 'techexam', 'idl', 'permission'];
+const groups = ['requests', 'techexam', 'idl', 'permission', 'payments'];
 
 const saved = ref<Record<string, string>>({});   // code → UpdatedAt ISO
 const loading = ref(true);

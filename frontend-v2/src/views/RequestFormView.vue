@@ -143,6 +143,12 @@ const selectedType = computed<RequestType | null>(() =>
   requestTypeId.value != null ? requestTypes.value.find(t => t.id === requestTypeId.value) ?? null : null,
 );
 
+// БЕЛ образец (documentPrintId 3) е скриен од операторите — не се нуди за ново барање.
+// Постоечкото бело барање сепак си го прикажува својот тип (задржи го избраниот).
+const BEL_PRINT_ID = 3;
+const selectableTypes = computed(() =>
+  requestTypes.value.filter(t => t.documentPrintId !== BEL_PRINT_ID || t.id === requestTypeId.value));
+
 // Derived: when the chosen type transfers ownership, the "Нов сопственик" field
 // becomes required and is shown from the moment the type is selected (legacy parity).
 const requiresNewOwner = computed(() => selectedType.value?.transfersOwnership ?? false);
@@ -722,9 +728,11 @@ onMounted(async () => {
     await loadRequest();
     await loadChildren();
   } else {
-    // Dashboard "create request by type" shortcut: preselect from ?typeId=
+    // Dashboard "create request by type" shortcut: preselect from ?typeId=.
+    // Не дозволувај бело барање (БЕЛ образец) да се одбере за ново барање.
     const pre = Number(route.query.typeId);
-    if (Number.isFinite(pre) && pre > 0 && requestTypes.value.some(rt => rt.id === pre)) {
+    if (Number.isFinite(pre) && pre > 0
+        && requestTypes.value.some(rt => rt.id === pre && rt.documentPrintId !== BEL_PRINT_ID)) {
       requestTypeId.value = pre;
     }
     // Prepopulate the legacy default attached documents.
@@ -765,7 +773,7 @@ onMounted(async () => {
             <label>{{ t('requests.form.type') }} *</label>
             <Select
               v-model="requestTypeId"
-              :options="requestTypes" optionLabel="name" optionValue="id"
+              :options="selectableTypes" optionLabel="name" optionValue="id"
               :disabled="isReadOnly"
               :placeholder="t('requests.form.pickType')" />
           </div>

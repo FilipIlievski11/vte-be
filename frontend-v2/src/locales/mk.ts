@@ -73,6 +73,14 @@ export default {
     payInstallment: 'Плати',
     installmentPaid: 'Рата {n} е платена',
     installmentPayFailed: 'Плаќањето на ратата не успеа',
+    priceSaved: 'Цената е зачувана',
+    priceSaveFailed: 'Промената на цената не успеа',
+    editPriceHint: 'Кликни за промена на цената',
+    printReceipt: 'Сметкопотврда',
+    markPaid: 'Означи платено',
+    markUnpaid: 'Означи неплатено',
+    statusSaved: 'Статусот е зачуван',
+    statusSaveFailed: 'Промената на статусот не успеа',
     tabs: {
       all: 'Сите',
       paid: 'Платени',
@@ -184,6 +192,9 @@ export default {
       pickType: 'Избери тип',
       pickOrg: 'Избери станица',
       pickController: 'Избери контролор',
+      result: 'Резултат',
+      resultAuto: 'автоматски од ставките',
+      resultManual: 'рачно одреден',
       typeRequired: 'Изберете тип на технички преглед.',
       orgRequired: 'Изберете станица/организација.',
       dateRequired: 'Внесете датум на извршување.',
@@ -598,6 +609,8 @@ export default {
       maker: 'Марка',
       model: 'Модел',
       madeCountry: 'Држава на производство',
+
+      manufactureYear: 'Година на производство',
       primaryColor: 'Боја',
       secondaryColor: 'Втора боја',
       fuel: 'Гориво',
@@ -689,6 +702,8 @@ export default {
       council: 'Републички совет за безбедност',
       councilRoads: 'Републички совет за безбедност од јавни патишта',
     },
+    allCommunities: 'Сите општини',
+    communityLabel: 'Општина: {name}',
     preview: {
       docTitle: 'ПРЕГЛЕД ЗА НАПЛАТА ЗА: {name}',
       period: 'Датум од: {from}  до: {to}',
@@ -817,6 +832,7 @@ export default {
       techexam: 'Технички преглед',
       idl: 'Меѓународни дозволи',
       permission: 'Полномошна',
+      payments: 'Плаќања',
     },
     names: {
       plav: 'Плав регистрационен лист',
@@ -827,6 +843,7 @@ export default {
       idlPermit: 'Меѓународна дозвола — образец',
       permCert: 'Одобрение за туѓо возило',
       permReq: 'Барање за полномошно',
+      smetko: 'Сметкопотврда',
     },
   },
 
@@ -907,6 +924,9 @@ export default {
       paymentCategoryGroupId: 'Група правила (легаси)',
       parametarFrom: 'Парам. од',
       parametarTo: 'Парам. до',
+      ageFrom: 'Возраст од (год.)',
+      ageTo: 'Возраст до (год.)',
+      ageToHelp: 'празно = без граница',
       vehicleCategoryFilter: 'Филтер по категории возила (CSV)',
       vehicleCategoryFilterHelp: 'пр. M1,N1 — празно = сите',
       bankAccount: 'Банкарска сметка',
@@ -1038,7 +1058,22 @@ export default {
   dashboard: {
     welcome: 'Добредојде, {name}',
     role: 'Улога: {roles}',
-    noRole: 'нема',
+    noRole: 'нема',    stats: {
+      openRequests: 'Отворени барања',
+      requestsToday: 'Барања денес',
+      examsPassedToday: 'Исправни прегледи денес',
+      debtItems: 'Ставки за наплата',
+      debtTotal: 'Вкупно за наплата',
+      debtClients: 'Клиенти во наплата',
+    },
+    shortcuts: {
+      title: 'Брзи акции',
+      newTechExam: 'Нов технички преглед',
+      newClient: 'Нов клиент',
+      newVehicle: 'Ново возило',
+      reports: 'Извештаи',
+    },
+
     newIdl: 'Нова меѓународна дозвола',
     newPermission: 'Ново полномошно',
     tiles: {
@@ -1068,6 +1103,10 @@ export default {
       addItem: 'Додади',
       addItemPlaceholder: 'Услуга од ценовникот…',
       itemAdded: 'Ставката е додадена',
+      derivation: {
+        sovetTp: '1,5% од технички преглед',
+        sovetPt: '1% од патна такса',
+      },
       addFailed: 'Додавањето не успеа',
       delete: 'Избриши ставка',
       deleteConfirm: 'Дали сакаш да ја избришеш ставката „{service}" ({price} ден.)?',
@@ -1075,7 +1114,19 @@ export default {
       selectGroup: 'Избери ги сите за овој клиент',
       paid: 'Платено',
       paidTip: 'Оваа ставка е фактурирана/платена',
+
+      noteExam: 'Тех. преглед бр.{n}',
+
+      noteRequest: 'Барање бр.{n}',
       makeBill: 'Направи сметка ({n})',
+
+      makeBillPlain: 'Направи сметка',
+
+      selectHint: 'Одбери ставки за сметка или бришење',
+
+      selectedHint: '{n} избрани · {sum} ден.',
+
+      deleteSelectedPlain: 'Избриши избрани',
       makeBillTitle: 'Нова сметка од избраните ставки',
       makeBillConfirm: 'Направи сметка',
       billItems: 'Ставки',
@@ -1101,7 +1152,7 @@ export default {
       skippedPaid: '{n} платени ставки беа прескокнати',
     },
     recentOpen: {
-      title: 'Најнови отворени барања',
+      title: 'Најнови барања',
       all: 'Види ги сите',
       empty: 'Нема отворени барања.',
     },

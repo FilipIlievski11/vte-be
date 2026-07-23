@@ -57,6 +57,16 @@ public class PriceCatalog
     /// <summary>Upper bound (inclusive) on the vehicle property. Legacy: ParametarTo.</summary>
     public double? ParametarTo { get; set; }
 
+    // ---- Second rule dimension: vehicle AGE (Сл. весник 89/2022 eco-fee tariff is
+    // категорија × СТАРОСТ × зафатнина — the legacy model couldn't express two ranges,
+    // which is why operators typed the eco fee manually). NULL/NULL = no age condition.
+
+    /// <summary>Minimum vehicle age in years (inclusive), from ManufactureDate. NULL = 0.</summary>
+    public int? AgeFrom { get; set; }
+
+    /// <summary>Maximum vehicle age in years (inclusive). NULL = unbounded („над 30").</summary>
+    public int? AgeTo { get; set; }
+
     /// <summary>Optional CSV of <see cref="VehicleCategory"/> codes the fee applies to
     /// (empty = all). Legacy used VehicleCategoryForPayments join table.</summary>
     public string? VehicleCategoryFilter { get; set; }

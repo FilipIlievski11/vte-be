@@ -87,7 +87,11 @@ public class VehiclePermissionsController : ControllerBase
         string? AuthorizedName, string? AuthorizedEmbg, string? AuthorizedIdCardNumber,
         string? AuthorizedPassportNumber, string? AuthorizedAddress,
         string? VehicleDisplay, string? PlateNumber, string? VehicleVin, string? VehicleEngineNumber,
-        string? IssuerName, string? IssuingCityName, string? IssuerOrgName, string? CompanyName);
+        string? IssuerName, string? IssuingCityName, string? IssuerOrgName, string? CompanyName,
+        // Request-form (БАРАЊЕ) composite-line enrichment — live client data (birth/living),
+        // resolved at print time because the permission snapshot never carried them.
+        bool? OwnerIsBusiness, string? OwnerBirthCityName, DateTime? OwnerDateOfBirth, string? OwnerLivingCityName,
+        string? AuthorizedBirthCityName, DateTime? AuthorizedDateOfBirth, string? AuthorizedLivingCityName);
 
     // ---- List ----
 
@@ -314,6 +318,25 @@ public class VehiclePermissionsController : ControllerBase
         var companyName = await _db.Companies.AsNoTracking()
             .Where(c => c.Id == x.CompanyId).Select(c => c.Name).FirstOrDefaultAsync();
 
+        // Request-form enrichment: owner client via the relation, authorized client directly.
+        var owner = await (
+            from r in _db.ClientVehicleRelations.AsNoTracking()
+            join c in _db.Clients.AsNoTracking() on r.ClientId equals c.Id
+            where r.Id == x.ClientVehicleRelationId
+            select new { c.Business, c.DateOfBirth, c.BirthCityId, c.CityId }
+        ).FirstOrDefaultAsync();
+        var auth = await _db.Clients.AsNoTracking()
+            .Where(c => c.Id == x.AuthorizedClientId)
+            .Select(c => new { c.DateOfBirth, c.BirthCityId, c.CityId })
+            .FirstOrDefaultAsync();
+
+        var cityIds = new[] { owner?.BirthCityId, owner?.CityId, auth?.BirthCityId, auth?.CityId }
+            .Where(i => i.HasValue).Select(i => i!.Value).Distinct().ToList();
+        var cityNames = await _db.Cities.AsNoTracking()
+            .Where(c => cityIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name);
+        string? city(int? id) => id.HasValue ? cityNames.GetValueOrDefault(id.Value) : null;
+
         return Ok(new PermPrintDto(
             x.Id, x.PermissionNumber, x.TrafficLicenceNumber, x.TriptiqueNumber,
             x.IssuedDate, x.StartDate, x.ValidTillDate, x.Note,
@@ -321,7 +344,9 @@ public class VehiclePermissionsController : ControllerBase
             x.AuthorizedName, x.AuthorizedEmbg, x.AuthorizedIdCardNumber,
             x.AuthorizedPassportNumber, x.AuthorizedAddress,
             x.VehicleDisplay, x.PlateNumber, x.VehicleVin, x.VehicleEngineNumber,
-            issuerName, cityName, orgName, companyName?.Trim()));
+            issuerName, cityName, orgName, companyName?.Trim(),
+            owner?.Business, city(owner?.BirthCityId), owner?.DateOfBirth, city(owner?.CityId),
+            city(auth?.BirthCityId), auth?.DateOfBirth, city(auth?.CityId)));
     }
 
     // ---- helpers ----

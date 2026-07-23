@@ -283,7 +283,21 @@ public record MatchedPrice(int PriceCatalogId, decimal Price, double VatPercent)
    scope". `PriceCompanyId` is critical — without it every legacy company's "Operating fee" rule
    fires at once → duplicate debt lines.
 
-3. **Ranged-rule filtering (client-side, needs reflection over `Vehicle`):**
+3. **Registration-category filter (added 2026-07-16).** `VehicleCategoryFilter` is a CSV of
+   `VehicleCategory` CODES (`"M2"`, `"M3,N2"` …), matched case-insensitively against the vehicle's
+   `CategoryId → VehicleCategory.Code` (resolved once per evaluation, only when some candidate uses
+   it). This splits fees that share a PAYMENT category but differ by registration category — e.g.
+   минибуси (M2) vs автобуси (M3), both payment-cat 5. Data caveat: codes exist in Cyrillic-lookalike
+   variants (`L1е`, `Т1`) — rule CSVs must list them (see `migrate/seed-sovet-fee-2026.sql`).
+   Unknown/missing code on the vehicle → the rule can't match (operator handles manually).
+
+4. **Age condition (added 2026-07-16).** `AgeFrom`/`AgeTo` (years, inclusive) gate the rule on the
+   vehicle's age = `Today.Year − ManufactureDate.Year`. Unknown manufacture date → no match. This is
+   the second rule dimension the Сл. весник 89/2022 eco tariff needs (категорија × старост ×
+   зафатнина) which the legacy single-range model couldn't express — see
+   `migrate/seed-eco-fee-rules-2022.sql` (+ `-bus.sql`).
+
+5. **Ranged-rule filtering (client-side, needs reflection over `Vehicle`):**
    - `VehicleField` blank → **fixed-fee rule, always matches** → added to `matched`.
    - `VehicleField` set but `vehicle is null` → skip.
    - Otherwise read the named property off `Vehicle` via a cached `PropertyInfo` (`GetVehicleField`,
@@ -291,12 +305,12 @@ public record MatchedPrice(int PriceCatalogId, decimal Price, double VatPercent)
      and test `ParametarFrom ≤ value ≤ ParametarTo` (NULL bounds → `double.MinValue/MaxValue`).
      An **unknown property name is skipped, not thrown** (`prop is null` → continue).
 
-4. **Sentinel fallback.** A rule with `ParametarFrom ∈ {null,0} AND ParametarTo ∈ {null,0}` is a
+6. **Sentinel fallback.** A rule with `ParametarFrom ∈ {null,0} AND ParametarTo ∈ {null,0}` is a
    "default tier" sentinel. Sentinels that pass the value test land in a separate `fallback` list.
    **Winners = `matched` if non-empty, else `fallback`** — sentinels only fire when no explicit
    range matched.
 
-5. **VAT snapshot.** For each winner, look up `VatRate.Percent` by `VatRateId` and emit a
+7. **VAT snapshot.** For each winner, look up `VatRate.Percent` by `VatRateId` and emit a
    `MatchedPrice`.
 
 > ⚠ **Sentinel multiplier (gotcha #8) is NOT implemented here.** Legacy: when

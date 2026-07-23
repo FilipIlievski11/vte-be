@@ -53,11 +53,16 @@ const form = ref<Partial<Omit<Vehicle, 'companyId' | 'active'>> & { companyId: n
   seats: null, standingSeats: null,
   co2GKm: null, noiseStaticDb: null, noiseMovingDb: null,
   typeText: null, modelVariant: null, approvalMark: null,
+  manufactureDate: null,
   note: null, active: true,
 });
 
 // Maker is a UI-only selector that drives the Model dropdown filter
 const selectedMakerId = ref<number | null>(null);
+
+// Годината се уредува како број; се чува како manufactureDate. Ако годината не е
+// сменета, оригиналниот целосен датум останува недопрен.
+const manufactureYear = ref<number | null>(null);
 
 // Lookups
 const companies     = ref<Company[]>([]);
@@ -121,6 +126,7 @@ async function loadVehicle() {
   if (!isEdit.value) return;
   const { data } = await api.get<Vehicle>(`/vehicles/${props.id}`);
   form.value = { ...data };
+  manufactureYear.value = data.manufactureDate ? new Date(data.manufactureDate).getFullYear() : null;
   // Resolve current maker from the chosen model
   if (data.modelId) {
     const m = models.value.find(mm => mm.id === data.modelId);
@@ -277,6 +283,11 @@ async function save() {
   errorBanner.value = null;
   try {
     const payload: Record<string, unknown> = { ...form.value };
+    // Годината → manufactureDate: непроменета година го чува оригиналниот датум.
+    const origYear = form.value.manufactureDate ? new Date(form.value.manufactureDate).getFullYear() : null;
+    payload.manufactureDate = manufactureYear.value == null
+      ? null
+      : (manufactureYear.value === origYear ? form.value.manufactureDate : `${manufactureYear.value}-01-01`);
     // Don't send computed/echo fields
     delete payload.id; delete payload.createdAt; delete payload.companyId;
     if (auth.isAdmin && form.value.companyId != null) {
@@ -411,6 +422,9 @@ function fmtDate(s: string | null | undefined) {
             </div>
             <div class="field"><label>{{ t('vehicles.form.madeCountry') }}</label>
               <Select v-model="form.madeCountryId" :options="countries" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+            </div>
+            <div class="field"><label>{{ t('vehicles.form.manufactureYear') }}</label>
+              <InputNumber v-model="manufactureYear" :useGrouping="false" :min="1900" :max="2100" placeholder="—" />
             </div>
           </div>
           <div class="row">

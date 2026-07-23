@@ -73,6 +73,14 @@ export default {
     payInstallment: 'Pay',
     installmentPaid: 'Installment {n} paid',
     installmentPayFailed: 'Installment payment failed',
+    priceSaved: 'Price saved',
+    priceSaveFailed: 'Price change failed',
+    editPriceHint: 'Click to change the price',
+    printReceipt: 'Receipt (smetkopotvrda)',
+    markPaid: 'Mark paid',
+    markUnpaid: 'Mark unpaid',
+    statusSaved: 'Status saved',
+    statusSaveFailed: 'Status change failed',
     tabs: {
       all: 'All',
       paid: 'Paid',
@@ -184,6 +192,9 @@ export default {
       pickType: 'Select type',
       pickOrg: 'Select station',
       pickController: 'Select controller',
+      result: 'Result',
+      resultAuto: 'derived from the defect lines',
+      resultManual: 'set manually',
       typeRequired: 'Select a technical-exam type.',
       orgRequired: 'Select a station/organization.',
       dateRequired: 'Enter the exam date.',
@@ -598,6 +609,8 @@ export default {
       maker: 'Maker',
       model: 'Model',
       madeCountry: 'Country of manufacture',
+
+      manufactureYear: 'Year of manufacture',
       primaryColor: 'Color',
       secondaryColor: 'Secondary color',
       fuel: 'Fuel',
@@ -715,6 +728,8 @@ export default {
       council: 'Republic safety council',
       councilRoads: 'Republic safety council (from public roads)',
     },
+    allCommunities: 'All municipalities',
+    communityLabel: 'Municipality: {name}',
     preview: {
       docTitle: 'COLLECTION PREVIEW FOR: {name}',
       period: 'Date from: {from}  to: {to}',
@@ -817,6 +832,7 @@ export default {
       techexam: 'Technical inspection',
       idl: 'International driving licences',
       permission: 'Vehicle permissions',
+      payments: 'Payments',
     },
     names: {
       plav: 'Blue registration sheet',
@@ -827,6 +843,7 @@ export default {
       idlPermit: 'International licence — form',
       permCert: 'Third-party vehicle permission',
       permReq: 'Vehicle permission request',
+      smetko: 'Receipt (smetkopotvrda)',
     },
   },
 
@@ -907,6 +924,9 @@ export default {
       paymentCategoryGroupId: 'Rule group (legacy)',
       parametarFrom: 'Param from',
       parametarTo: 'Param to',
+      ageFrom: 'Age from (yrs)',
+      ageTo: 'Age to (yrs)',
+      ageToHelp: 'empty = unbounded',
       vehicleCategoryFilter: 'Vehicle category filter (CSV)',
       vehicleCategoryFilterHelp: 'e.g. M1,N1 — empty = all',
       bankAccount: 'Bank account',
@@ -1038,7 +1058,22 @@ export default {
   dashboard: {
     welcome: 'Welcome, {name}',
     role: 'Role: {roles}',
-    noRole: 'none',
+    noRole: 'none',    stats: {
+      openRequests: 'Open requests',
+      requestsToday: 'Requests today',
+      examsPassedToday: 'Passed exams today',
+      debtItems: 'Billable items',
+      debtTotal: 'Total to collect',
+      debtClients: 'Clients to bill',
+    },
+    shortcuts: {
+      title: 'Quick actions',
+      newTechExam: 'New technical exam',
+      newClient: 'New client',
+      newVehicle: 'New vehicle',
+      reports: 'Reports',
+    },
+
     newIdl: 'New international licence',
     newPermission: 'New permission',
     tiles: {
@@ -1068,6 +1103,10 @@ export default {
       addItem: 'Add',
       addItemPlaceholder: 'Service from the price catalog…',
       itemAdded: 'Item added',
+      derivation: {
+        sovetTp: '1.5% of the technical exam fee',
+        sovetPt: '1% of the road tax',
+      },
       addFailed: 'Adding the item failed',
       delete: 'Delete debt',
       deleteConfirm: 'Delete the debt "{service}" ({price} den.)?',
@@ -1075,7 +1114,19 @@ export default {
       selectGroup: 'Select all for this client',
       paid: 'Paid',
       paidTip: 'This item has been billed / paid',
+
+      noteExam: 'Tech exam #{n}',
+
+      noteRequest: 'Request #{n}',
       makeBill: 'Make bill ({n})',
+
+      makeBillPlain: 'Make bill',
+
+      selectHint: 'Select items to bill or delete',
+
+      selectedHint: '{n} selected · {sum} den.',
+
+      deleteSelectedPlain: 'Delete selected',
       makeBillTitle: 'New bill from selected debts',
       makeBillConfirm: 'Make bill',
       billItems: 'Items',
@@ -1101,7 +1152,7 @@ export default {
       skippedPaid: '{n} paid debts were skipped',
     },
     recentOpen: {
-      title: 'Recent open requests',
+      title: 'Recent requests',
       all: 'View all',
       empty: 'No open requests.',
     },

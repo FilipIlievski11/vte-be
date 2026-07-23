@@ -41,6 +41,8 @@ public class PriceCatalogsController : ControllerBase
         string? VehicleField,
         double? ParametarFrom,
         double? ParametarTo,
+        int? AgeFrom,
+        int? AgeTo,
         string? VehicleCategoryFilter,
         string? BankAccount,
         string? PaymentForm,
@@ -59,6 +61,8 @@ public class PriceCatalogsController : ControllerBase
         string? VehicleField,
         double? ParametarFrom,
         double? ParametarTo,
+        int? AgeFrom,
+        int? AgeTo,
         string? VehicleCategoryFilter,
         string? BankAccount,
         string? PaymentForm,
@@ -70,6 +74,7 @@ public class PriceCatalogsController : ControllerBase
         x.VehiclePaymentCategoryId, x.CommunityId, x.PriceCompanyId,
         x.PaymentCategoryGroupId,
         x.VehicleField, x.ParametarFrom, x.ParametarTo,
+        x.AgeFrom, x.AgeTo,
         x.VehicleCategoryFilter, x.BankAccount, x.PaymentForm,
         x.Active);
 
@@ -266,6 +271,10 @@ public class PriceCatalogsController : ControllerBase
         if (dto.ParametarFrom.HasValue && dto.ParametarTo.HasValue
             && dto.ParametarFrom.Value > dto.ParametarTo.Value)
             return "ParametarFrom must be ≤ ParametarTo.";
+        if (dto.AgeFrom is < 0 || dto.AgeTo is < 0)
+            return "Возраста не може да биде негативна.";
+        if (dto.AgeFrom.HasValue && dto.AgeTo.HasValue && dto.AgeFrom.Value > dto.AgeTo.Value)
+            return "Возраст-од мора да биде ≤ возраст-до.";
         return null;
     }
 
@@ -283,6 +292,8 @@ public class PriceCatalogsController : ControllerBase
         entity.VehicleField = string.IsNullOrWhiteSpace(dto.VehicleField) ? null : dto.VehicleField.Trim();
         entity.ParametarFrom = dto.ParametarFrom;
         entity.ParametarTo = dto.ParametarTo;
+        entity.AgeFrom = dto.AgeFrom;
+        entity.AgeTo = dto.AgeTo;
         entity.VehicleCategoryFilter = string.IsNullOrWhiteSpace(dto.VehicleCategoryFilter)
             ? null : dto.VehicleCategoryFilter.Trim();
         entity.BankAccount = string.IsNullOrWhiteSpace(dto.BankAccount) ? null : dto.BankAccount.Trim();
