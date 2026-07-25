@@ -746,6 +746,53 @@ public class PaymentDocumentsController : ControllerBase
         return NoContent();
     }
 
+    public record StornoDto(string Reason);
+
+    /// <summary>Storno (reverse) a v2-native bill — legacy btnStorno set the flag and
+    /// reprinted the fiscal receipt as a storno one (the fiscal-file endpoint already
+    /// composes U1/%V for stornoed docs). v2 additionally re-opens the debts this bill
+    /// settled, so they reappear on Наплата and can be billed again. Mirrored legacy
+    /// bills are refused: their storno state is owned by the old system and the
+    /// incremental sync would overwrite a v2-side flag on the next run.</summary>
+    [HttpPost("{id:long}/storno")]
+    public async Task<ActionResult<object>> Storno(long id, [FromBody] StornoDto req)
+    {
+        var reason = Trimmed(req.Reason);
+        if (reason == null)
+            return BadRequest(new { error = "Наведи причина за сторнирање." });
+
+        var doc = await _db.PaymentDocuments.FirstOrDefaultAsync(x => x.Id == id);
+        if (doc == null) return NotFound();
+        if (!doc.Active) return BadRequest(new { error = "Сметката е избришана." });
+        if (doc.Stornoed) return BadRequest(new { error = "Сметката е веќе сторнирана." });
+        if (doc.LegacyId.HasValue)
+            return BadRequest(new { error = "Оваа сметка е од стариот систем — сторнирај ја таму; промената се презема со следниот sync." });
+
+        var lines = await _db.PaymentDocumentLines
+            .Where(l => l.PaymentDocumentId == id && l.CustomerDebtId != null)
+            .ToListAsync();
+        var lineByDebt = lines.ToDictionary(l => l.CustomerDebtId!.Value, l => l.Id);
+        var debtIds = lineByDebt.Keys.ToList();
+        var debts = await _db.CustomerDebts.Where(d => debtIds.Contains(d.Id)).ToListAsync();
+        var reopened = 0;
+        foreach (var debt in debts)
+        {
+            // Re-open only debts THIS bill settled — a debt re-billed elsewhere keeps its state.
+            if (debt.Paid && debt.SettledByLineId == lineByDebt[debt.Id])
+            {
+                debt.Paid = false;
+                debt.SettledByLineId = null;
+                reopened++;
+            }
+        }
+
+        doc.Stornoed = true;
+        doc.StornoReason = reason;
+        doc.ModifiedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(new { stornoed = true, reopenedDebts = reopened });
+    }
+
     // ---- СМЕТКОПОТВРДА (legacy A4-landscape receipt, two copies side by side) ----
 
     public record ReceiptLineDto(string? Name, double BezDdv, double Popust, double Ddv, double Cena);

@@ -81,6 +81,18 @@ export default {
     markUnpaid: 'Mark unpaid',
     statusSaved: 'Status saved',
     statusSaveFailed: 'Status change failed',
+    stornoDialog: {
+      button: 'Storno',
+      title: 'Storno (reverse) bill',
+      warning: 'Bill {doc} will be reversed. The debts it settled return to Billing, and for a cash bill a fiscal STORNO receipt is printed afterwards.',
+      reasonLabel: 'Storno reason',
+      reasonPlaceholder: 'e.g. wrong line / wrong client',
+      reasonRequired: 'A storno reason is required',
+      confirm: 'Storno',
+      done: 'Bill reversed',
+      debtsReopened: '{n} debt(s) returned to Billing',
+      failed: 'Storno failed',
+    },
     tabs: {
       all: 'All',
       paid: 'Paid',
@@ -1335,5 +1347,6 @@ export default {
     actions: 'Actions',
     search: 'Search',
     loading: 'Loading',
+    note: 'Note',
   },
 };

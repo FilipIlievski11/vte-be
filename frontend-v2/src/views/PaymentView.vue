@@ -9,6 +9,8 @@ import Tag from 'primevue/tag';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import InputNumber from 'primevue/inputnumber';
+import Dialog from 'primevue/dialog';
+import Textarea from 'primevue/textarea';
 import { useToast } from 'primevue/usetoast';
 import { printFiscalForDocument } from '@/fiscal/fiscal';
 
@@ -92,6 +94,40 @@ async function togglePaid() {
     toast.add({ severity: 'error', summary: t('payments.statusSaveFailed'), detail: e?.response?.data?.error ?? e?.message, life: 4500 });
   } finally {
     paidBusy.value = false;
+  }
+}
+
+// ---- Storno (legacy btnStorno: flag + storno fiscal receipt; v2 also re-opens the debts) ----
+const stornoDialog = ref(false);
+const stornoReason = ref('');
+const stornoBusy = ref(false);
+const canStorno = computed(() =>
+  !!bill.value && bill.value.active && !bill.value.stornoed && bill.value.legacyId == null);
+function openStorno() {
+  stornoReason.value = '';
+  stornoDialog.value = true;
+}
+async function confirmStorno() {
+  if (!stornoReason.value.trim()) {
+    toast.add({ severity: 'warn', summary: t('payments.stornoDialog.reasonRequired'), life: 3000 });
+    return;
+  }
+  stornoBusy.value = true;
+  try {
+    const res = await api.post<{ stornoed: boolean; reopenedDebts: number }>(
+      `/payment-documents/${props.id}/storno`, { reason: stornoReason.value.trim() });
+    stornoDialog.value = false;
+    await load();
+    toast.add({ severity: 'success', summary: t('payments.stornoDialog.done'),
+      detail: res.data.reopenedDebts > 0 ? t('payments.stornoDialog.debtsReopened', { n: res.data.reopenedDebts }) : undefined,
+      life: 4500 });
+    // Legacy reprinted the receipt as a fiscal STORNO one right after saving the flag.
+    await printFiscal();
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: t('payments.stornoDialog.failed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 5000 });
+  } finally {
+    stornoBusy.value = false;
   }
 }
 
@@ -179,9 +215,27 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
           :icon="bill.paid ? 'pi pi-times-circle' : 'pi pi-check-circle'"
           :label="bill.paid ? t('payments.markUnpaid') : t('payments.markPaid')"
           :loading="paidBusy" @click="togglePaid" />
+        <Button v-if="canStorno" :label="t('payments.stornoDialog.button')" icon="pi pi-ban"
+          size="small" outlined severity="danger" @click="openStorno" />
         <Tag :value="statusTag.label" :severity="statusTag.severity" class="big-tag" />
       </div>
     </div>
+
+    <Dialog v-model:visible="stornoDialog" modal :header="t('payments.stornoDialog.title')"
+            :style="{ width: '30rem' }">
+      <p class="storno-warn">
+        {{ t('payments.stornoDialog.warning', { doc: bill?.documentNumber ?? '' }) }}
+      </p>
+      <label class="storno-label" for="storno-reason">{{ t('payments.stornoDialog.reasonLabel') }}</label>
+      <Textarea id="storno-reason" v-model="stornoReason" rows="3" autoResize class="storno-reason"
+                :placeholder="t('payments.stornoDialog.reasonPlaceholder')" />
+      <template #footer>
+        <Button :label="t('common.cancel')" text severity="secondary"
+                :disabled="stornoBusy" @click="stornoDialog = false" />
+        <Button :label="t('payments.stornoDialog.confirm')" icon="pi pi-ban" severity="danger"
+                :loading="stornoBusy" :disabled="!stornoReason.trim()" @click="confirmStorno" />
+      </template>
+    </Dialog>
 
     <div v-if="loading" class="muted pad">{{ t('common.loading') }}…</div>
 
@@ -409,6 +463,10 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
 .field .val { font-size: .9rem; word-break: break-word; }
 .plate { display: inline-block; font-family: monospace; font-weight: 600; padding-right: .5rem; }
 .item-name { font-weight: 500; }
+
+.storno-warn { margin: 0 0 .75rem; font-size: .9rem; }
+.storno-label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; color: var(--color-text-muted); margin-bottom: .25rem; }
+.storno-reason { width: 100%; }
 
 .price-cell.editable { cursor: pointer; border-bottom: 1px dashed var(--p-surface-400); }
 .price-cell.editable:hover { color: var(--p-primary-600); border-bottom-color: var(--p-primary-400); }

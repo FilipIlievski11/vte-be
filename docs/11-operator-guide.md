@@ -361,8 +361,17 @@ reversed).
 
 Header actions:
 
+- **Сметкопотврда** — print the A4 landscape receipt (two copies on one sheet).
 - **Фискална сметка** (*Fiscal receipt*) — print/reprint the fiscal receipt. A
   **Фискализирана** (*Fiscalized*) tag with timestamp shows once it has been printed.
+- **Означи платено / неплатено** — toggle the paid status.
+- **Сторнирај** (*Storno*) — reverse a wrong bill. A dialog asks for the mandatory
+  **Причина за сторнирање** (reason). On confirm: the bill flips to **Сторно**, the debts
+  it settled **return to the Наплата panel** (so you can bill the client again correctly),
+  and for a cash bill the fiscal **STORNO** receipt prints right away. A stornoed bill is
+  frozen — no price edits, no paid toggle, no installment payments. Bills that came from
+  the old system can't be stornoed here — storno them in the old program and the change
+  arrives with the next sync.
 - The status tag.
 
 **Installments on the bill:** if the bill is an agreement, a **Рати и договор** section lists

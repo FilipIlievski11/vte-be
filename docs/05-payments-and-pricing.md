@@ -624,6 +624,22 @@ byte: 18% → 192 (А), 5% → 193 (Б), 0% → 194 (В); names are transliterat
 `FiscalPrintedAt`). `printFiscalForDocument` returns one of:
 `printed` / `skipped` / `no-folder` / `unsupported` / `error`.
 
+### Storno (reversing a bill)
+
+`POST /api/payment-documents/{id}/storno` `{ reason }` — the „Сторнирај" button on the bill
+detail (confirmation dialog, reason mandatory). Mirrors legacy `btnStorno` (flag + save +
+fiscal reprint) with one v2 improvement: every debt **this bill settled** (matched via
+`PaymentDocumentLine.CustomerDebtId` == `CustomerDebt.SettledByLineId`) flips back to
+`Paid=false` so it reappears on the Наплата panel and can be billed again. After a successful
+storno the FE immediately re-runs the fiscal print — for a stornoed doc `fiscal-file`
+composes the STORNO receipt (` U1,0000,1` open / `%V` close) exactly like legacy.
+
+Guards: reason required; already-stornoed and inactive docs refused; **legacy-mirrored bills
+(`LegacyId != null`) refused** — their storno state is owned by the old system and the
+incremental sync state-sync (§14) would overwrite a v2-side flag on the next run. Stornoed
+docs additionally refuse paid-toggle, line-price edits and installment payments (guards were
+already in place). One-way: there is no un-storno.
+
 ---
 
 ## 14. Legacy-sync state reconciliation (guarding v2 payments)
