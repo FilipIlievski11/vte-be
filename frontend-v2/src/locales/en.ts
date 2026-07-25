@@ -40,6 +40,18 @@
     },
   },
 
+  search: {
+    placeholder: 'Search: plate, EMBG, name, VIN…',
+    minChars: 'Type at least 2 characters.',
+    searching: 'Searching',
+    clients: 'Owners',
+    vehicles: 'Vehicles',
+    noResults: 'No results for "{q}".',
+    hintMove: 'move',
+    hintOpen: 'open',
+    hintClose: 'close',
+  },
+
   nav: {
     dashboard: 'Dashboard',
     clients: 'Clients',

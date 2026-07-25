@@ -40,6 +40,18 @@
     },
   },
 
+  search: {
+    placeholder: 'Барај: таблица, ЕМБГ, име, VIN…',
+    minChars: 'Внеси барем 2 знаци.',
+    searching: 'Пребарувам',
+    clients: 'Сопственици',
+    vehicles: 'Возила',
+    noResults: 'Нема резултати за „{q}".',
+    hintMove: 'движење',
+    hintOpen: 'отвори',
+    hintClose: 'затвори',
+  },
+
   nav: {
     dashboard: 'Контролна табла',
     clients: 'Сопственици',

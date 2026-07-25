@@ -7,6 +7,7 @@ import { api } from '@/api/client';
 import { setLocale, type Locale } from '@/locales';
 import Button from 'primevue/button';
 import SelectButton from 'primevue/selectbutton';
+import GlobalSearch from '@/components/GlobalSearch.vue';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -251,6 +252,9 @@ async function logout() {
           · {{ auth.companyName ?? `${t('app.companyShort')} #${auth.companyId}` }}
         </span>
         <span class="crumb" v-else-if="auth.isAdmin">· {{ t('app.crossTenant') }}</span>
+      </div>
+      <div class="topbar-search">
+        <GlobalSearch />
       </div>
       <div class="right">
         <Button

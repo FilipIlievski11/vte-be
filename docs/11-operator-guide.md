@@ -44,6 +44,13 @@ toggle (a PrimeVue `SelectButton` in `frontend-v2/src/components/AppLayout.vue`)
 switch instantly; the choice is remembered. The default and primary language is Macedonian.
 A sun/moon button next to it switches **Темна тема / Светла тема** (dark / light theme).
 
+### Global search (Ctrl+K)
+
+The box in the middle of the top bar searches **owners and vehicles from any screen**:
+type a plate, EMBG, name or VIN (2+ characters). Results come grouped — **Сопственици**
+and **Возила** — click one (or ↑↓ + Enter) to jump straight to that client/vehicle.
+**Ctrl+K** focuses the box from anywhere; **Esc** closes it.
+
 ### The top bar and sidebar
 
 - The left sidebar (**Навигација**) lists the main modules; the collapse button toggles
