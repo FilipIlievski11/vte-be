@@ -422,9 +422,14 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
             <label>{{ t('payments.col.legacyId') }}</label>
             <div class="val mono">{{ bill.legacyId }}</div>
           </div>
-          <div class="field" v-if="bill.operatorLegacyId">
+          <div class="field" v-if="bill.operatorName || bill.operatorLegacyId">
             <label>{{ t('payments.col.operator') }}</label>
-            <div class="val mono">#{{ bill.operatorLegacyId }}</div>
+            <div class="val">
+              <template v-if="bill.operatorName">{{ bill.operatorName }}
+                <span v-if="bill.operatorLegacyId" class="muted small mono">#{{ bill.operatorLegacyId }}</span>
+              </template>
+              <span v-else class="mono">#{{ bill.operatorLegacyId }}</span>
+            </div>
           </div>
         </div>
       </section>

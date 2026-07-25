@@ -546,6 +546,13 @@ Most lookup tables share one generic editor (`RefManagerView.vue`, routes under 
 - **Станици** (`/stations`, `StationsView.vue`) — inspection stations. Fields: **Име** *,
   **Компанија** * (the owning tenant).
 
+> **Renaming an operator (миграција од легаси):** migrated legacy operators appear with
+> usernames like `македонка*.119`. To make one functional, EDIT that account (clean
+> username, e.g. `makedonka`) and set a password with **Ресетирај лозинка** — do NOT
+> create a new account: editing keeps the same user id, so everything the person did in
+> the old system (bills, exams) stays attributed to them, and prints show their name.
+> Operators change their own password later via Подеси профил.
+
 ### 8.5 Оператори (Operators)
 
 `/operators` (`OperatorsView.vue`). Manage user accounts. Filter by search, **Сите компании**,

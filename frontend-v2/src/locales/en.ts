@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   app: {
     title: 'VTE v2',
     navigation: 'Navigation',
@@ -1069,7 +1069,7 @@ export default {
       newTitle: 'New operator',
       editTitle: 'Edit operator',
       userName: 'Username',
-      userNameLocked: "Username can't be changed after creation.",
+      userNameRename: 'Renaming keeps the history (same user).',
       fullName: 'Full name',
       email: 'Email',
       password: 'Password',

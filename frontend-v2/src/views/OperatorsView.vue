@@ -142,8 +142,10 @@ async function saveForm() {
       });
       toast.add({ severity: 'success', summary: t('operators.created'), life: 2000 });
     } else {
-      // Update (note: userName + role + password are NOT updatable here by design)
+      // Update (role + password are NOT updatable here by design; rename keeps the
+      // same user id, so historical attribution stays connected)
       await api.put(`/users/${editingId.value}`, {
+        userName: fForm.value.userName.trim() || null,
         fullName: (fForm.value.fullName as string)?.trim() || null,
         email: fForm.value.email.trim() || null,
         companyId: fForm.value.companyId,
@@ -320,12 +322,9 @@ const skeletonRows = Array.from({ length: 8 });
   >
     <div class="form-grid">
       <div class="field full">
-        <label>
-          {{ t('operators.form.userName') }} *
-          <i v-if="editingId" class="pi pi-lock" style="font-size: 0.7rem; margin-left: 0.25rem; opacity: 0.6" />
-        </label>
-        <InputText v-model="fForm.userName" :disabled="!!editingId" maxlength="100" />
-        <span v-if="editingId" class="muted" style="font-size: 0.7rem">{{ t('operators.form.userNameLocked') }}</span>
+        <label>{{ t('operators.form.userName') }} *</label>
+        <InputText v-model="fForm.userName" maxlength="100" />
+        <span v-if="editingId" class="muted" style="font-size: 0.7rem">{{ t('operators.form.userNameRename') }}</span>
       </div>
       <div class="field full">
         <label>{{ t('operators.form.fullName') }}</label>

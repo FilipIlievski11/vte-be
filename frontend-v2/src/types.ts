@@ -886,6 +886,7 @@ export interface PaymentDetail {
   vehicleMakerModel: string | null;
   organizationId: number;
   operatorLegacyId: number | null;
+  operatorName: string | null;
   discount: number | null;
   paid: boolean;
   stornoed: boolean;

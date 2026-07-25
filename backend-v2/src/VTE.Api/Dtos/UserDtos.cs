@@ -27,7 +27,9 @@ public record UserUpdateRequest(
     string? FullName,
     [EmailAddress] string? Email,
     byte? CompanyId,
-    bool? IsActive
+    bool? IsActive,
+    // Optional rename (null/empty = keep). Same user id → history stays attached.
+    string? UserName = null
 );
 
 public record ResetPasswordRequest(

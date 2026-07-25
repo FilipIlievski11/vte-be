@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   app: {
     title: 'ВТЕ v2',
     navigation: 'Навигација',
@@ -1069,7 +1069,7 @@ export default {
       newTitle: 'Нов оператор',
       editTitle: 'Уреди оператор',
       userName: 'Корисничко име',
-      userNameLocked: 'Корисничкото име не може да се менува по креирањето.',
+      userNameRename: 'Промената на името ја задржува историјата (истиот корисник).',
       fullName: 'Полно име',
       email: 'E-mail',
       password: 'Лозинка',

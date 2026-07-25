@@ -160,6 +160,20 @@ public class UsersController : ControllerBase
         if (req.CompanyId.HasValue && !await _db.Companies.AnyAsync(c => c.Id == req.CompanyId.Value))
             return BadRequest(new { error = $"Company {req.CompanyId.Value} does not exist." });
 
+        // Rename support — used to give migrated legacy operators clean login names
+        // (e.g. "македонка*.119" → "makedonka") while keeping the SAME user id, so all
+        // historical attribution (OperatorLegacyId == user id) stays connected.
+        if (!string.IsNullOrWhiteSpace(req.UserName) && req.UserName.Trim() != u.UserName)
+        {
+            var newName = req.UserName.Trim();
+            var taken = await _users.FindByNameAsync(newName);
+            if (taken != null && taken.Id != u.Id)
+                return Conflict(new { error = "User name already taken." });
+            var renamed = await _users.SetUserNameAsync(u, newName);
+            if (!renamed.Succeeded)
+                return BadRequest(new { error = string.Join("; ", renamed.Errors.Select(e => e.Description)) });
+        }
+
         if (req.FullName != null) u.FullName = req.FullName;
         if (req.Email    != null) u.Email    = req.Email;
         if (req.CompanyId.HasValue) u.CompanyId = req.CompanyId;

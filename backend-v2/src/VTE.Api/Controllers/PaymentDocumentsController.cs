@@ -65,7 +65,7 @@ public class PaymentDocumentsController : ControllerBase
         int PaymentTypeId, string? PaymentTypeName,
         long CustomerVehicleRelationId, string? ClientName, string? ClientMB,
         long? VehicleId, string? VehiclePlate, string? VehicleVin, string? VehicleMakerModel,
-        int OrganizationId, int? OperatorLegacyId,
+        int OrganizationId, int? OperatorLegacyId, string? OperatorName,
         double? Discount, bool Paid, bool Stornoed, string? StornoReason, string? Note,
         long? AgreementId, InstallmentAgreementDto? Agreement,
         int? InvoicedToCompanyId,
@@ -319,13 +319,26 @@ public class PaymentDocumentsController : ControllerBase
                     a.GuarantorName, a.GuarantorAddress, a.GuarantorEmbg);
         }
 
+        // Operator display name: v2 creator first, else the migrated legacy operator
+        // account (whose AspNetUsers.Id equals the legacy operator id).
+        string? operatorName = null;
+        if (!string.IsNullOrEmpty(d.CreatedByUserId))
+            operatorName = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == d.CreatedByUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+        if (operatorName == null && d.OperatorLegacyId.HasValue)
+        {
+            var legacyUserId = d.OperatorLegacyId.Value.ToString();
+            operatorName = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == legacyUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+        }
+
         return Ok(new PaymentDetailDto(
             d.Id, d.CompanyId,
             d.DocumentNumber, d.IssueDate, d.DueDate,
             d.PaymentTypeId, ptName,
             d.CustomerVehicleRelationId, clientName, clientMB,
             vehicleId, plate, vin, makerModel,
-            d.OrganizationId, d.OperatorLegacyId,
+            d.OrganizationId, d.OperatorLegacyId, operatorName,
             d.Discount, d.Paid, d.Stornoed, d.StornoReason, d.Note,
             d.AgreementId, agreement,
             d.InvoicedToCompanyId,
@@ -930,6 +943,14 @@ public class PaymentDocumentsController : ControllerBase
         if (!string.IsNullOrEmpty(d.CreatedByUserId))
             referent = await _db.Users.AsNoTracking()
                 .Where(u => u.Id == d.CreatedByUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+        if (referent == null && d.OperatorLegacyId.HasValue)
+        {
+            // Legacy bills carry the legacy operator id; migrated operator accounts
+            // keep that id as their AspNetUsers.Id, so the name resolves directly.
+            var legacyUserId = d.OperatorLegacyId.Value.ToString();
+            referent = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == legacyUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+        }
 
         return Ok(new ReceiptPrintDto(
             d.Id, d.DocumentNumber, d.IssueDate, type?.Trim(),
