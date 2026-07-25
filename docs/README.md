@@ -30,5 +30,6 @@ Running or deploying it? Go straight to **09**. Setting up a station? **11** (+ 
 | 09 | [Deployment & operations](09-deployment-and-operations.md) | The Hetzner/Docker prod stack, the build-release → deploy flow, secrets, the SSH tunnel for local dev against prod, EF auto-migrate, and the DB re-lift procedure. |
 | 10 | [Legacy data migration](10-data-migration.md) | Importing real data from the legacy VTEZVV DB: the snapshot, the `migrate/*.sql` scripts, incremental top-up, and the migration gotchas. |
 | 11 | [Operator & admin guide](11-operator-guide.md) | Task-oriented daily-use walkthrough (in Macedonian terms): create a request, finish it, print, do an exam, bill, fiscal-print, and admin screens. |
+| 12 | [Рачен sync со легаси](12-legacy-sync.md) | How to pull fresh legacy data into prod yourself: the one-click `deploy/run-legacy-sync.ps1`, what the sync does, the manual 3-window fallback, and troubleshooting. |
 
 > The older [`DEPLOYMENT.md`](DEPLOYMENT.md) predates this set — **09** is the canonical deployment reference.
