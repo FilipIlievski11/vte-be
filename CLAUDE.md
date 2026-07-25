@@ -140,6 +140,7 @@ For legacy references when you need ground truth:
 - **Redeploy** = `.\deploy\build-release.ps1` → scp `release.zip` to `/opt/vte/app/` → unzip to `publish/` → `docker compose up -d --build api`
 - Production DB carries the REAL data since 2026-06-13 (lifted via .bak restore from Filip's laptop: ~32k clients / 66k vehicles / 128k requests / 100k tech-exams). Re-lift = backup local VTE → gzip → scp → `docker cp` into mssql container → `RESTORE DATABASE ... WITH REPLACE` (stop api container first). Admin password on prod = the strong one in `deploy/prod.secrets.local`, NOT the local dev default.
 - `LegacySync` is disabled in prod (`LegacySync__Enabled=false` in `.env`)
+- **DB backups**: nightly cron 01:15 UTC runs `/opt/vte/backup-db.sh` (source: `deploy/backup-db.sh`) — BACKUP+VERIFYONLY → `/opt/vte/backups/vte-YYYYMMDD.bak.gz`, keeps 14. `run-legacy-sync.ps1` step 5 pulls the newest to `C:\Users\filip\VTE-backups` (keeps 10). Restore procedure: `docs/14-db-backup.md`.
 
 ## How to run
 

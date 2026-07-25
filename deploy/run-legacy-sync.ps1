@@ -5,9 +5,11 @@
 # Што прави, по ред:
 #   1. Проверува/крева SSH тунел до прод SQL (порта 14333).
 #   2. Проверува/крева локален dev API (порта 5300) — тој е врската кон прод базата.
-#   3. Се најавува како admin (лозинка од deploy\prod.secrets.local — никогаш не се印 печати).
+#   3. Се најавува како admin (лозинка од deploy\prod.secrets.local — никогаш не се печати).
 #   4. Повикува POST /api/admin/legacy-sync и го чека резултатот (~2 минути).
-#   5. Ги печати бројките: колку нови барања/прегледи/возила/клиенти... дошле.
+#      Ги печати бројките: колку нови барања/прегледи/возила/клиенти... дошле.
+#   5. Ја повлекува најновата резерва на базата од серверот во C:\Users\filip\VTE-backups
+#      (офсајт копија — серверот сам прави дневен backup во 03:15, види docs/14-db-backup.md).
 #
 # Скриптата е безбедна за повторување — sync-от е идемпотентен (само дополнува
 # што недостига + ги освежува статусите на сметките).
@@ -37,9 +39,9 @@ if (-not $adminPw) { throw 'ADMIN_PASSWORD недостига во prod.secrets.
 
 # --- 1. Тунел ---
 if (Test-Port14333) {
-    Write-Host '[1/4] Тунелот до прод SQL е веќе крентат.' -ForegroundColor Green
+    Write-Host '[1/5] Тунелот до прод SQL е веќе крентат.' -ForegroundColor Green
 } else {
-    Write-Host '[1/4] Кревам SSH тунел до прод SQL…'
+    Write-Host '[1/5] Кревам SSH тунел до прод SQL…'
     Start-Process ssh -ArgumentList '-i', "$env:USERPROFILE\.ssh\vte_deploy", '-N',
         '-o', 'ServerAliveInterval=30', '-o', 'ExitOnForwardFailure=yes',
         '-L', '127.0.0.1:14333:localhost:1433', 'root@116.202.8.155' -WindowStyle Minimized
@@ -53,9 +55,9 @@ if (Test-Port14333) {
 
 # --- 2. Dev API ---
 if (Test-Api) {
-    Write-Host '[2/4] Локалниот API (порта 5300) е веќе крентат.' -ForegroundColor Green
+    Write-Host '[2/5] Локалниот API (порта 5300) е веќе крентат.' -ForegroundColor Green
 } else {
-    Write-Host '[2/4] Кревам локален API (нов прозорец; првиот старт бilda ~1-2 мин)…'
+    Write-Host '[2/5] Кревам локален API (нов прозорец; првиот старт бilda ~1-2 мин)…'
     Start-Process dotnet -ArgumentList 'run', '--launch-profile', 'http' -WorkingDirectory $apiDir
     $ok = $false
     foreach ($i in 1..60) { Start-Sleep 3; if (Test-Api) { $ok = $true; break } }
@@ -64,7 +66,7 @@ if (Test-Api) {
 }
 
 # --- 3. Најава ---
-Write-Host '[3/4] Најава како admin…'
+Write-Host '[3/5] Најава како admin…'
 $login = Invoke-RestMethod -Method Post -Uri 'http://localhost:5300/api/auth/login' `
     -ContentType 'application/json' `
     -Body (@{ userName = 'admin'; password = $adminPw } | ConvertTo-Json)
@@ -72,7 +74,7 @@ $token = $login.token
 if (-not $token) { throw 'Најавата не успеа.' }
 
 # --- 4. Sync ---
-Write-Host "[4/4] Синхронизирам со легаси ($(Get-Date -Format HH:mm:ss)) — трае ~2 минути, не затворај…"
+Write-Host "[4/5] Синхронизирам со легаси ($(Get-Date -Format HH:mm:ss)) — трае ~2 минути, не затворај…"
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $r = Invoke-RestMethod -Method Post -Uri 'http://localhost:5300/api/admin/legacy-sync' `
     -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 600
@@ -92,4 +94,37 @@ Write-Host ("  Докази сопственост:   {0}" -f $r.ownershipProofs
 Write-Host ("  Докази уплата:        {0}" -f $r.paymentProofs)
 Write-Host ''
 Write-Host ("Водени маркери: клиент {0} · возило {1} · барање {2}" -f $r.maxClientId, $r.maxVehicleId, $r.maxRequestId) -ForegroundColor DarkGray
+
+# --- 5. Офсајт копија: повлечи го најновиот DB backup од серверот (не-фатално) ---
+try {
+    $bkDir = 'C:\Users\filip\VTE-backups'
+    if (-not (Test-Path $bkDir)) { New-Item -ItemType Directory -Path $bkDir | Out-Null }
+    $sshKey = "$env:USERPROFILE\.ssh\vte_deploy"
+    $newest = (ssh -i $sshKey root@116.202.8.155 'ls -t /opt/vte/backups/vte-*.bak.gz 2>/dev/null | head -1')
+    if ($newest) { $newest = $newest.Trim() }
+    if ($newest) {
+        $name = Split-Path $newest -Leaf
+        $local = Join-Path $bkDir $name
+        if (Test-Path $local) {
+            Write-Host ("[5/5] Офсајт копија: {0} е веќе повлечен." -f $name) -ForegroundColor Green
+        } else {
+            Write-Host ("[5/5] Повлекувам DB backup {0} (~100MB, минута-две)…" -f $name)
+            scp -q -i $sshKey ("root@116.202.8.155:{0}" -f $newest) "$local.part"
+            if ($LASTEXITCODE -eq 0) {
+                Move-Item "$local.part" $local -Force
+                Get-ChildItem $bkDir -Filter 'vte-*.bak.gz' | Sort-Object LastWriteTime -Descending |
+                    Select-Object -Skip 10 | Remove-Item -Force
+                Write-Host ("      Зачувано: {0}" -f $local) -ForegroundColor Green
+            } else {
+                Remove-Item "$local.part" -Force -ErrorAction SilentlyContinue
+                Write-Host '      Повлекувањето не успеа — sync-от помина OK, пробај следен пат.' -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host '[5/5] На серверот сè уште нема backup фајлови.' -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host ("[5/5] Офсајт копијата не успеа ({0}) — sync-от помина OK." -f $_.Exception.Message) -ForegroundColor Yellow
+}
+
 Write-Host 'Тунелот и API-то остануваат кренати (слободно затвори ги нивните прозорци кога ќе завршиш).' -ForegroundColor DarkGray
