@@ -16,7 +16,6 @@ import type {
   EndRequestResult,
 } from '@/types';
 import Button from 'primevue/button';
-import Card from 'primevue/card';
 import InputText from 'primevue/inputtext';
 import AutoComplete from 'primevue/autocomplete';
 import Textarea from 'primevue/textarea';
@@ -743,6 +742,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="request-form">
   <div class="page-header">
     <div>
       <h1>
@@ -754,20 +754,13 @@ onMounted(async () => {
         <span class="muted">&nbsp;·&nbsp;{{ t('requests.form.created') }}: {{ fmtDateTime(createdAt) }}</span>
       </div>
     </div>
-    <div class="actions">
-      <Button :label="t('common.back')" icon="pi pi-arrow-left" severity="secondary" size="small" outlined @click="router.push('/requests')" />
-      <Button v-if="isEdit" :label="t('requests.print.button')" icon="pi pi-print" severity="secondary" size="small" outlined @click="openPrint" />
-      <Button v-if="isEdit && !isReadOnly" :label="t('common.delete')" icon="pi pi-trash" severity="danger" size="small" outlined @click="remove" />
-      <Button v-if="!isReadOnly" :label="t('common.save')" icon="pi pi-check" size="small" :loading="saving" @click="save" />
-      <Button v-if="isEdit && !isReadOnly" :label="t('requests.end.button')" icon="pi pi-flag" severity="success" size="small" :loading="ending" @click="confirmEnd" />
-    </div>
   </div>
 
   <div class="cards-grid">
     <!-- Header: type, status, company (admin only on new) -->
-    <Card class="card">
-      <template #title>{{ t('requests.form.sections.header') }}</template>
-      <template #content>
+    <div class="card">
+      <div class="card-header">{{ t('requests.form.sections.header') }}</div>
+      <div class="card-body">
         <div class="grid two-col">
           <div class="field">
             <label>{{ t('requests.form.type') }} *</label>
@@ -793,13 +786,13 @@ onMounted(async () => {
         <div v-if="selectedType?.description" class="type-hint">
           <i class="pi pi-info-circle" />&nbsp;{{ selectedType.description }}
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Anchor: legacy two-field linked pickers (vehicle ⇄ owner) -->
-    <Card class="card">
-      <template #title>{{ t('requests.form.sections.anchor') }}</template>
-      <template #content>
+    <div class="card">
+      <div class="card-header">{{ t('requests.form.sections.anchor') }}</div>
+      <div class="card-body">
         <!-- Vehicle — search by chassis (VIN) or plate; picking fills the owner -->
         <div class="anchor-row">
           <label>{{ t('requests.form.vehicleField') }} *</label>
@@ -885,13 +878,13 @@ onMounted(async () => {
           </div>
           <div class="muted small">{{ t('requests.form.newOwnerHint') }}</div>
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Attached documents (new-request only — editable rows, legacy defaults) -->
-    <Card v-if="!isEdit" class="card">
-      <template #title>{{ t('requests.form.attachedDocs') }}</template>
-      <template #content>
+    <div v-if="!isEdit" class="card">
+      <div class="card-header">{{ t('requests.form.attachedDocs') }}</div>
+      <div class="card-body">
         <div class="docs-grid">
           <!-- Доказ за потеклото на возилото -->
           <div class="docs-col">
@@ -923,19 +916,19 @@ onMounted(async () => {
             <div v-if="!pendingPayment.length" class="muted small">{{ t('requests.form.paymentProofs.empty') }}</div>
           </div>
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Ownership proofs (edit-only) -->
-    <Card v-if="isEdit" class="card">
-      <template #title>
+    <div v-if="isEdit" class="card">
+      <div class="card-header">
         <div class="card-title-row">
           <span>{{ t('requests.form.sections.ownershipProofs') }}</span>
           <span class="count">{{ ownershipProofs.length }}</span>
           <Button v-if="!isReadOnly" :label="t('common.new')" icon="pi pi-plus" size="small" severity="success" @click="openOwnershipNew" />
         </div>
-      </template>
-      <template #content>
+      </div>
+      <div class="card-body">
         <DataTable v-if="ownershipProofs.length" :value="ownershipProofs" size="small" stripedRows>
           <Column field="ownershipProofTypeName" :header="t('requests.form.ownershipProofs.colType')" />
           <Column field="detail" :header="t('requests.form.ownershipProofs.colDetail')">
@@ -954,19 +947,19 @@ onMounted(async () => {
           </Column>
         </DataTable>
         <div v-else class="muted small">{{ t('requests.form.ownershipProofs.empty') }}</div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Payment proofs (edit-only) -->
-    <Card v-if="isEdit" class="card">
-      <template #title>
+    <div v-if="isEdit" class="card">
+      <div class="card-header">
         <div class="card-title-row">
           <span>{{ t('requests.form.sections.paymentProofs') }}</span>
           <span class="count">{{ paymentProofs.length }}</span>
           <Button v-if="!isReadOnly" :label="t('common.new')" icon="pi pi-plus" size="small" severity="success" @click="openPaymentNew" />
         </div>
-      </template>
-      <template #content>
+      </div>
+      <div class="card-body">
         <DataTable v-if="paymentProofs.length" :value="paymentProofs" size="small" stripedRows>
           <Column field="paymentProofTypeName" :header="t('requests.form.paymentProofs.colType')" />
           <Column field="detail" :header="t('requests.form.paymentProofs.colDetail')">
@@ -985,19 +978,19 @@ onMounted(async () => {
           </Column>
         </DataTable>
         <div v-else class="muted small">{{ t('requests.form.paymentProofs.empty') }}</div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Attachments (edit-only) -->
-    <Card v-if="isEdit" class="card">
-      <template #title>
+    <div v-if="isEdit" class="card">
+      <div class="card-header">
         <div class="card-title-row">
           <span>{{ t('requests.form.sections.attachments') }}</span>
           <span class="count">{{ attachments.length }}</span>
           <Button v-if="!isReadOnly" :label="t('requests.form.attachments.upload')" icon="pi pi-upload" size="small" severity="success" @click="openUpload" />
         </div>
-      </template>
-      <template #content>
+      </div>
+      <div class="card-body">
         <DataTable v-if="attachments.length" :value="attachments" size="small" stripedRows>
           <Column field="fileName" :header="t('requests.form.attachments.colFile')">
             <template #body="{ data }">
@@ -1024,13 +1017,13 @@ onMounted(async () => {
           </Column>
         </DataTable>
         <div v-else class="muted small">{{ t('requests.form.attachments.empty') }}</div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
     <!-- Audit (edit-only) -->
-    <Card v-if="isEdit" class="card">
-      <template #title>{{ t('requests.form.sections.audit') }}</template>
-      <template #content>
+    <div v-if="isEdit" class="card">
+      <div class="card-header">{{ t('requests.form.sections.audit') }}</div>
+      <div class="card-body">
         <table class="audit-table">
           <tr>
             <td>{{ t('requests.form.created') }}</td>
@@ -1048,8 +1041,16 @@ onMounted(async () => {
             <td>{{ endedByName ?? '—' }}</td>
           </tr>
         </table>
-      </template>
-    </Card>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-actions">
+    <Button :label="t('common.back')" icon="pi pi-arrow-left" severity="secondary" size="small" outlined @click="router.push('/requests')" />
+    <Button v-if="isEdit" :label="t('requests.print.button')" icon="pi pi-print" severity="secondary" size="small" outlined @click="openPrint" />
+    <Button v-if="isEdit && !isReadOnly" :label="t('common.delete')" icon="pi pi-trash" severity="danger" size="small" outlined @click="remove" />
+    <Button v-if="!isReadOnly" :label="t('common.save')" icon="pi pi-check" size="small" :loading="saving" @click="save" />
+    <Button v-if="isEdit && !isReadOnly" :label="t('requests.end.button')" icon="pi pi-flag" severity="success" size="small" :loading="ending" @click="confirmEnd" />
   </div>
 
   <!-- Ownership proof dialog -->
@@ -1129,14 +1130,62 @@ onMounted(async () => {
       <Button :label="t('requests.form.attachments.upload')" icon="pi pi-upload" :loading="uploading" @click="uploadAttachment" />
     </template>
   </Dialog>
+  </div>
 </template>
 
 <style scoped>
-.cards-grid { display: grid; grid-template-columns: 1fr; gap: 1rem }
+/* Same v1-style cards as ClientFormView / VehicleFormView / TechExamFormView. */
+.request-form { max-width: 1200px; margin: 0 auto; padding-bottom: 3.5rem; }
+.request-form :deep(.page-header) { margin-bottom: 0.75rem; }
+.request-form :deep(.page-header h1) { font-size: 1.125rem; letter-spacing: -0.01em; }
+.request-form :deep(.page-header .subtitle) { font-size: 0.75rem; }
+.request-form :deep(.card .card-header) { padding: 0.45rem 0.875rem; font-size: 0.8125rem; font-weight: 600; }
+.request-form :deep(.card .card-body) { padding: 0.625rem 0.875rem; }
+.request-form :deep(.field) { gap: 0.15rem; margin-bottom: 0.45rem; }
+.request-form :deep(.field label) { font-size: 0.75rem; font-weight: 500; color: var(--color-text-secondary); }
+.request-form :deep(.p-select),
+.request-form :deep(.p-inputtext),
+.request-form :deep(.p-datepicker),
+.request-form :deep(.p-inputnumber) { width: 100%; }
+.request-form :deep(.p-inputtext) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; min-height: auto; }
+.request-form :deep(.p-inputnumber-input) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; }
+.request-form :deep(.p-textarea) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; min-height: auto; }
+.request-form :deep(.p-select-label) { padding: 0.3rem 0.5rem; font-size: 0.8125rem; }
+.request-form :deep(.p-select-dropdown) { width: 1.625rem; }
+
+/* Brand accent stripe on each card header */
+.request-form :deep(.card .card-header) {
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 92%, var(--color-brand-500)) 0%, var(--color-surface) 100%);
+}
+.request-form :deep(.card .card-header)::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--color-brand-500); border-radius: 0 2px 2px 0;
+}
+.request-form :deep(.p-inputtext:focus),
+.request-form :deep(.p-inputnumber-input:focus),
+.request-form :deep(.p-textarea:focus),
+.request-form :deep(.p-select:not(.p-disabled).p-focus) {
+  outline: none;
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-500) 25%, transparent);
+}
+
+.footer-actions {
+  position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
+  padding: 0.625rem 2rem;
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--color-border);
+  z-index: 5;
+}
+
+.cards-grid { display: grid; grid-template-columns: 1fr; gap: 0.5rem }
 .card { width: 100% }
-.grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem }
-.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .85rem }
-.field label { font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+.grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.625rem }
+.field { display: flex; flex-direction: column }
 .muted { color: var(--p-text-muted-color) }
 .small { font-size: .75rem }
 .subtitle { display: flex; align-items: center; gap: .4rem; font-size: .85rem }
@@ -1164,7 +1213,7 @@ onMounted(async () => {
   grid-template-columns: 13rem 1fr auto auto;
   align-items: center; gap: .5rem; margin-bottom: .6rem;
 }
-.anchor-row > label { font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+.anchor-row > label { font-weight: 500; font-size: .75rem; color: var(--color-text-secondary) }
 .anchor-input { width: 100% }
 .anchor-input :deep(.p-autocomplete-input) { width: 100% }
 .anchor-locked { margin-top: .2rem }

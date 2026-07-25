@@ -184,6 +184,9 @@ const statusTag = computed<{ label: string; severity: 'success' | 'warn' | 'dang
 function lineSubtotal(l: { unitPrice: number; quantity: number }) {
   return l.unitPrice * l.quantity;
 }
+
+// Попуст колоната се појавува само ако навистина постои попуст на некоја ставка.
+const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount > 0) ?? false);
 </script>
 
 <template>
@@ -276,10 +279,8 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
             <label>{{ t('payments.col.due') }}</label>
             <div class="val">{{ fmtDate(bill.dueDate) }}</div>
           </div>
-          <div class="field" v-if="bill.discount != null">
-            <label>{{ t('payments.discount') }}</label>
-            <div class="val">{{ bill.discount }} %</div>
-          </div>
+          <!-- Попуст: скриен визуелно (станицата не го користи) — bill.discount и
+               пресметките (фискална, сметкопотврда) остануваат недопрени. -->
           <div class="field" v-if="bill.note">
             <label>{{ t('common.note') }}</label>
             <div class="val">{{ bill.note }}</div>
@@ -321,7 +322,9 @@ function lineSubtotal(l: { unitPrice: number; quantity: number }) {
           <Column :header="t('payments.col.vat')" style="width:75px; text-align:right">
             <template #body="{ data }">{{ data.vatPercent }} %</template>
           </Column>
-          <Column :header="t('payments.col.lineDiscount')" style="width:75px; text-align:right">
+          <!-- Колоната „Попуст" е скриена визуелно — вредноста и натаму учествува
+               во пресметките; прикажи ја само ако некоја ставка навистина има попуст. -->
+          <Column v-if="hasAnyLineDiscount" :header="t('payments.col.lineDiscount')" style="width:75px; text-align:right">
             <template #body="{ data }">{{ data.discount }} %</template>
           </Column>
           <Column :header="t('payments.col.subtotal')" style="width:110px; text-align:right">
