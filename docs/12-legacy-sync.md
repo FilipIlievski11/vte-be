@@ -6,11 +6,25 @@ VB.NET систем. Синхронизацијата НЕ е автоматск
 
 ## Најбрзо: еден клик
 
-Од корен на репото, во PowerShell:
+На Desktop постои кратенка **„VTE Sync so legacy"** — двоен клик и готово (прозорецот
+останува отворен за да ги видиш бројките).
+
+Или рачно, од БИЛО КАДЕ во PowerShell (со полна патека):
 
 ```powershell
+& "C:\Users\filip\OneDrive\Documents\Repos\trunk\trunk\deploy\run-legacy-sync.ps1"
+```
+
+Или прво до репото, па релативно:
+
+```powershell
+cd C:\Users\filip\OneDrive\Documents\Repos\trunk\trunk
 .\deploy\run-legacy-sync.ps1
 ```
+
+> Ако PowerShell се жали „running scripts is disabled", пушти ја вака:
+> `powershell -ExecutionPolicy Bypass -File "C:\...\deploy\run-legacy-sync.ps1"`
+> (кратенката на Desktop веќе го прави тоа сама).
 
 Скриптата сама:
 
