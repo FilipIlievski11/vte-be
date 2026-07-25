@@ -830,6 +830,28 @@ export default {
     billingCategories: 'Billing categories',
     printTemplates: 'Print templates',
     legacySync: 'Legacy Sync',
+    audit: 'Audit log',
+  },
+
+  audit: {
+    title: 'Audit log',
+    subtitle: 'Who changed what and when, money-wise: bills, prices, statuses and debts.',
+    searchPlaceholder: 'Search by description or user',
+    records: '{count} records',
+    empty: 'No records (the log starts from its introduction).',
+    col: { when: 'When', user: 'User', action: 'Action', what: 'Description' },
+    filter: { all: 'All actions' },
+    action: {
+      billCreate: 'Bill created',
+      billStorno: 'Storno',
+      billPaid: 'Paid/unpaid',
+      billLinePrice: 'Line price',
+      billInstallment: 'Installment paid',
+      debtCreate: 'Debt added',
+      debtPrice: 'Debt price',
+      debtDelete: 'Debt deleted',
+      debtDeleteBatch: 'Bulk delete',
+    },
   },
 
   printTemplates: {

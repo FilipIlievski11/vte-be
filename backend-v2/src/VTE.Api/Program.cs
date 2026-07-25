@@ -52,6 +52,7 @@ builder.Services.AddScoped<VTE.Infrastructure.Pricing.IDebtService, VTE.Infrastr
 builder.Services.AddSingleton<VTE.Api.Services.LegacySyncState>();
 builder.Services.AddScoped<VTE.Api.Services.LegacySyncService>();
 builder.Services.AddHostedService<VTE.Api.Services.LegacySyncScheduler>();
+builder.Services.AddScoped<VTE.Api.Services.AuditLogger>();
 
 // -------- Authentication: BOTH JWT (default) + Cookie --------
 builder.Services.AddAuthentication(opts =>

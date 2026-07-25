@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VTE.Domain.Clients;
+using VTE.Domain.Common;
 using VTE.Domain.Companies;
 using VTE.Domain.Geography;
 using VTE.Domain.Identity;
@@ -95,6 +96,9 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
     // Print-template saved layouts (global config, edited via „Печатни обрасци").
     public DbSet<PrintLayout> PrintLayouts => Set<PrintLayout>();
+
+    // Financial audit log (immutable, written together with the audited mutation).
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -884,6 +888,24 @@ public class VteDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.Code).HasMaxLength(40);
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.LayoutJson).IsRequired();   // nvarchar(max)
+        });
+
+        // Financial audit log — immutable rows, newest-first reads.
+        b.Entity<AuditEntry>(e =>
+        {
+            e.ToTable("AuditEntry");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnType("bigint").ValueGeneratedOnAdd();
+            e.Property(x => x.CompanyId).HasColumnType("tinyint");
+            e.Property(x => x.UserId).HasMaxLength(450);
+            e.Property(x => x.UserName).HasMaxLength(100);
+            e.Property(x => x.Action).HasMaxLength(40).IsRequired();
+            e.Property(x => x.EntityType).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Summary).HasMaxLength(500).IsRequired();
+            e.HasIndex(x => new { x.CompanyId, x.AtUtc });
+            e.HasIndex(x => new { x.EntityType, x.EntityId });
+            // Tenant filter — admins bypass.
+            e.HasQueryFilter(x => _tenant.IsAdmin || x.CompanyId == _tenant.CompanyId);
         });
     }
 }

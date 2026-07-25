@@ -640,6 +640,18 @@ incremental sync state-sync (§14) would overwrite a v2-side flag on the next ru
 docs additionally refuse paid-toggle, line-price edits and installment payments (guards were
 already in place). One-way: there is no un-storno.
 
+### Audit log (Дневник на промени)
+
+Every money-touching mutation writes an immutable `AuditEntry` row **in the same
+SaveChanges** as the mutation (`AuditLogger`, VTE.Api/Services): bill create / storno /
+paid-toggle / line-price / installment-pay, and debt create / price / delete / bulk-delete.
+Each row: who (user id + denormalized login name), when (UTC), action code
+(`bill.storno`, `debt.price`, …), entity ref, MK one-liner summary, and a JSON payload
+with the raw old/new values. Admin-only read API `GET /api/admin/audit`
+(filter by action prefix / free text / entityId); UI at Администрација → Дневник на
+промени (`AuditView.vue`) — bill rows deep-link to the bill page. Rows are never
+updated or deleted, and are tenant-scoped like everything else.
+
 ---
 
 ## 14. Legacy-sync state reconciliation (guarding v2 payments)

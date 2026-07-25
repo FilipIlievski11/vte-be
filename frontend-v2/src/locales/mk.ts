@@ -830,6 +830,28 @@ export default {
     billingCategories: 'Категории на наплата',
     printTemplates: 'Печатни обрасци',
     legacySync: 'Синхронизација (легаси)',
+    audit: 'Дневник на промени',
+  },
+
+  audit: {
+    title: 'Дневник на промени',
+    subtitle: 'Кој, кога и што променил на пари: сметки, цени, статуси и долгови.',
+    searchPlaceholder: 'Барај по опис или корисник',
+    records: '{count} записи',
+    empty: 'Нема записи (дневникот бележи од воведувањето).',
+    col: { when: 'Време', user: 'Корисник', action: 'Акција', what: 'Опис' },
+    filter: { all: 'Сите акции' },
+    action: {
+      billCreate: 'Сметка создадена',
+      billStorno: 'Сторно',
+      billPaid: 'Платено/неплатено',
+      billLinePrice: 'Цена на ставка',
+      billInstallment: 'Платена рата',
+      debtCreate: 'Долг додаден',
+      debtPrice: 'Цена на долг',
+      debtDelete: 'Долг избришан',
+      debtDeleteBatch: 'Групно бришење',
+    },
   },
 
   printTemplates: {

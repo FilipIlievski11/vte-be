@@ -21,11 +21,13 @@ public class CustomerDebtsController : ControllerBase
 {
     private readonly VteDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly VTE.Api.Services.AuditLogger _audit;
 
-    public CustomerDebtsController(VteDbContext db, ITenantContext tenant)
+    public CustomerDebtsController(VteDbContext db, ITenantContext tenant, VTE.Api.Services.AuditLogger audit)
     {
         _db = db;
         _tenant = tenant;
+        _audit = audit;
     }
 
     public record CustomerDebtRow(
@@ -260,6 +262,10 @@ public class CustomerDebtsController : ControllerBase
         };
         _db.CustomerDebts.Add(debt);
         await _db.SaveChangesAsync();
+        _audit.Log(debt.CompanyId, "debt.create", nameof(CustomerDebt), debt.Id,
+            $"Рачно додаден долг {price:0.##} ден. — {pc.Name?.Trim()} (релација {dto.CustomerVehicleRelationId})",
+            new { dto.CustomerVehicleRelationId, dto.PriceCatalogId, price });
+        await _db.SaveChangesAsync();
         return Ok(new { id = debt.Id });
     }
 
@@ -273,6 +279,9 @@ public class CustomerDebtsController : ControllerBase
         if (d == null) return NotFound();
         if (d.Paid) return BadRequest(new { error = "Веќе платена ставка не може да се избрише — потребно е сторно." });
         d.Active = false;
+        _audit.Log(d.CompanyId, "debt.delete", nameof(CustomerDebt), d.Id,
+            $"Избришан долг {d.Price:0.##} ден. (релација {d.CustomerVehicleRelationId})",
+            new { d.CustomerVehicleRelationId, d.PriceCatalogId, d.Price });
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -293,7 +302,11 @@ public class CustomerDebtsController : ControllerBase
             return BadRequest(new { error = "Ставката е избришана — цената не може да се менува." });
         if (d.Paid)
             return BadRequest(new { error = "Веќе платена ставка не може да се менува — потребно е сторно." });
+        var oldPrice = d.Price;
         d.Price = req.Price;
+        _audit.Log(d.CompanyId, "debt.price", nameof(CustomerDebt), d.Id,
+            $"Цена на долг {oldPrice:0.##} → {req.Price:0.##} ден. (релација {d.CustomerVehicleRelationId})",
+            new { d.CustomerVehicleRelationId, old = oldPrice, @new = req.Price });
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -318,6 +331,10 @@ public class CustomerDebtsController : ControllerBase
         var skippedPaid = rows.Count(r => r.Paid);
         var toDelete = rows.Where(r => !r.Paid).ToList();
         foreach (var r in toDelete) r.Active = false;
+        if (toDelete.Count > 0)
+            _audit.Log(toDelete[0].CompanyId, "debt.delete-batch", nameof(CustomerDebt), toDelete[0].Id,
+                $"Групно избришани {toDelete.Count} долга ({toDelete.Sum(r => r.Price):0.##} ден. вкупно)",
+                new { ids = toDelete.Select(r => r.Id).ToList(), total = toDelete.Sum(r => r.Price) });
         await _db.SaveChangesAsync();
 
         return Ok(new DeleteDebtsResponse(

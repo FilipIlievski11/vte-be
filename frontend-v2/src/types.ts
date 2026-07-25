@@ -585,6 +585,18 @@ export interface LegacySyncStatus {
   running: boolean;
   lastRun: LegacySyncLastRun | null;
 }
+/** One row of the financial audit log (admin „Дневник на промени"). */
+export interface AuditRow {
+  id: number;
+  atUtc: string;
+  userName: string | null;
+  action: string;
+  entityType: string;
+  entityId: number;
+  summary: string;
+  detailsJson: string | null;
+}
+
 /** Snapshot of the most recent sync run (manual or scheduled), from the API state. */
 export interface LegacySyncLastRun {
   startedAtUtc: string | null;

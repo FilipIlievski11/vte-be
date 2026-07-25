@@ -38,6 +38,7 @@ const groups: MenuGroup[] = [
       { to: '/billing-categories',                  labelKey: 'admin.billingCategories' },
       { to: '/print-templates',                     labelKey: 'admin.printTemplates' },
       { to: '/legacy-sync',                         labelKey: 'admin.legacySync' },
+      { to: '/audit',                               labelKey: 'admin.audit' },
     ],
   },
 ];

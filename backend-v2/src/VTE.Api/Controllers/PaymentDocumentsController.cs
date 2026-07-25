@@ -25,11 +25,13 @@ public class PaymentDocumentsController : ControllerBase
 {
     private readonly VteDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly VTE.Api.Services.AuditLogger _audit;
 
-    public PaymentDocumentsController(VteDbContext db, ITenantContext tenant)
+    public PaymentDocumentsController(VteDbContext db, ITenantContext tenant, VTE.Api.Services.AuditLogger audit)
     {
         _db = db;
         _tenant = tenant;
+        _audit = audit;
     }
 
     // ---- DTOs ----
@@ -521,9 +523,14 @@ public class PaymentDocumentsController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
+        var total = lines.Sum(l => l.UnitPrice * l.Quantity);
+        _audit.Log(doc.CompanyId, "bill.create", nameof(PaymentDocument), doc.Id,
+            $"Создадена сметка {doc.DocumentNumber} ({lines.Count} ставки, {total:0.##} ден., {type.Name?.Trim()})",
+            new { debtIds = req.DebtIds, total, paymentTypeId = req.PaymentTypeId });
+        await _db.SaveChangesAsync();
+
         await tx.CommitAsync();
 
-        var total = lines.Sum(l => l.UnitPrice * l.Quantity);
         return CreatedAtAction(nameof(Get), new { id = doc.Id },
             new CreateBillResponse(doc.Id, doc.DocumentNumber, total, lines.Count));
     }
@@ -553,6 +560,9 @@ public class PaymentDocumentsController : ControllerBase
             .CountAsync(s => s.PaymentDocumentId == id && s.Active && !s.Paid && s.Id != rata.Id);
         if (stillOpen == 0) doc.Paid = true;
 
+        _audit.Log(doc.CompanyId, "bill.installment-paid", nameof(PaymentDocument), doc.Id,
+            $"Платена рата {seq} ({rata.Amount:0.##} ден.) од сметка {doc.DocumentNumber}{(doc.Paid ? " — сметката е целосно платена" : "")}",
+            new { seq, amount = rata.Amount, documentPaid = doc.Paid });
         await _db.SaveChangesAsync();
         return Ok(new { documentPaid = doc.Paid, paidAt = rata.PaidAt });
     }
@@ -740,8 +750,12 @@ public class PaymentDocumentsController : ControllerBase
         if (doc == null) return NotFound();
         if (doc.Stornoed)
             return BadRequest(new { error = "Сметката е сторнирана — статусот не може да се менува." });
+        var oldPaid = doc.Paid;
         doc.Paid = req.Paid;
         doc.ModifiedAt = DateTime.UtcNow;
+        _audit.Log(doc.CompanyId, "bill.paid", nameof(PaymentDocument), doc.Id,
+            $"Сметка {doc.DocumentNumber}: означена {(req.Paid ? "ПЛАТЕНА" : "НЕПЛАТЕНА")}",
+            new { old = oldPaid, @new = req.Paid });
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -789,6 +803,9 @@ public class PaymentDocumentsController : ControllerBase
         doc.Stornoed = true;
         doc.StornoReason = reason;
         doc.ModifiedAt = DateTime.UtcNow;
+        _audit.Log(doc.CompanyId, "bill.storno", nameof(PaymentDocument), doc.Id,
+            $"СТОРНО на сметка {doc.DocumentNumber} — причина: {reason} ({reopened} долга вратени во Наплата)",
+            new { reason, reopenedDebts = reopened });
         await _db.SaveChangesAsync();
         return Ok(new { stornoed = true, reopenedDebts = reopened });
     }
@@ -943,8 +960,12 @@ public class PaymentDocumentsController : ControllerBase
         if (!line.Active)
             return BadRequest(new { error = "Ставката е избришана — цената не може да се менува." });
 
+        var oldPrice = line.UnitPrice;
         line.UnitPrice = req.UnitPrice;
         doc.ModifiedAt = DateTime.UtcNow;
+        _audit.Log(doc.CompanyId, "bill.line-price", nameof(PaymentDocument), doc.Id,
+            $"Цена {oldPrice:0.##} → {req.UnitPrice:0.##} ден. на ставка во сметка {doc.DocumentNumber}",
+            new { lineId, old = oldPrice, @new = req.UnitPrice });
         await _db.SaveChangesAsync();
         return NoContent();
     }

@@ -143,6 +143,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAdmin: true },
       },
       {
+        path: 'audit',
+        name: 'audit',
+        component: () => import('@/views/AuditView.vue'),
+        meta: { requiresAdmin: true },
+      },
+      {
         path: 'print-templates',
         name: 'print-templates',
         component: () => import('@/views/PrintTemplatesView.vue'),
