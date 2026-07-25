@@ -369,6 +369,8 @@ reversed).
 Header actions:
 
 - **Сметкопотврда** — print the A4 landscape receipt (two copies on one sheet).
+- **Договор** (installment bills only) — print the ДОГОВОР за отплата (the contract the
+  client and guarantor sign; legacy rptPaymentDocumentDogovor, A4 on blank paper).
 - **Фискална сметка** (*Fiscal receipt*) — print/reprint the fiscal receipt. A
   **Фискализирана** (*Fiscalized*) tag with timestamp shows once it has been printed.
 - **Означи платено / неплатено** — toggle the paid status.
@@ -385,7 +387,9 @@ Header actions:
 the agreement (**Бр. на договор**, **Датум**, **Вкупно рати**, **Гарант**…) and the schedule.
 Each unpaid installment row has a **Плати** (*Pay*) button: pressing it marks that rata paid
 (`POST /payment-documents/{id}/installments/{seq}/pay`) and quietly prints the fiscal receipt
-for that rata. You'll see **Рата {n} е платена**.
+for that rata. You'll see **Рата {n} е платена**. Paid rows get a small print icon —
+reprint the fiscal receipt for that rata (e.g. when the down payment's print didn't go
+through the first time).
 
 ### 6.6 The Плаќања list (Payments / bills register)
 

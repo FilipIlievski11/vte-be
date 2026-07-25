@@ -585,6 +585,27 @@ export interface LegacySyncStatus {
   running: boolean;
   lastRun: LegacySyncLastRun | null;
 }
+/** Print bundle for the installment agreement (ДОГОВОР за отплата). */
+export interface AgreementPrint {
+  id: number;
+  documentNumber: string;
+  agreementDate: string | null;
+  orgName: string | null;
+  orgSecretary: string | null;
+  communityName: string | null;
+  clientName: string | null;
+  clientAddress: string | null;
+  clientEmbg: string | null;
+  plate: string | null;
+  guarantorName: string | null;
+  guarantorAddress: string | null;
+  guarantorEmbg: string | null;
+  total: number;
+  remaining: number;
+  services: { name: string | null; bezDdv: number; ddv: number }[];
+  installments: { sequenceNo: number; amount: number; paid: boolean; date: string | null; note: string | null }[];
+}
+
 /** One row of the financial audit log (admin „Дневник на промени"). */
 export interface AuditRow {
   id: number;

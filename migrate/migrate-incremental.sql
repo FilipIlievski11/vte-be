@@ -712,8 +712,11 @@ SELECT
     CAST((SELECT COUNT(*) FROM dbo.InstallmentSchedule s2
           WHERE s2.PaymentDocumentId = c.IdPaymentDocument AND s2.Id < c.Id) +
          ROW_NUMBER() OVER (PARTITION BY c.IdPaymentDocument ORDER BY c.Id) AS int),
-    CONVERT(decimal(18,4), c.Price), NULL,
-    CONVERT(bit, COALESCE(c.Payed, 0)), c.DatePayed,
+    -- Legacy DatePayed is the PLANNED date (рок) until the rata is paid, then the pay
+    -- date. So it maps to DueDate always, and to PaidAt only when Payed=1.
+    CONVERT(decimal(18,4), c.Price), CONVERT(date, c.DatePayed),
+    CONVERT(bit, COALESCE(c.Payed, 0)),
+    CASE WHEN COALESCE(c.Payed,0) = 1 THEN c.DatePayed ELSE NULL END,
     CASE WHEN COALESCE(c.Payed,0) = 1 THEN CONVERT(decimal(18,4), c.Price) ELSE NULL END,
     NULLIF(c.IdOrganization, 0), NULLIF(c.IdOperator, 0), c.Note,
     CONVERT(bit, COALESCE(c.Active, 1))

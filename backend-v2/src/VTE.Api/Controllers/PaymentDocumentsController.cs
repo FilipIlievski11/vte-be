@@ -836,6 +836,120 @@ public class PaymentDocumentsController : ControllerBase
         double TotalBezDdv, double TotalDdv, double Total,
         string? ReferentName, string? Note, bool Paid, bool Stornoed);
 
+    // ---- Договор за рати (legacy rptPaymentDocumentDogovor) ----
+
+    public record AgreementServiceDto(string? Name, long BezDdv, long Ddv);
+    public record AgreementInstallmentDto(int SequenceNo, double Amount, bool Paid, DateTime? Date, string? Note);
+    public record AgreementPrintDto(
+        long Id, string DocumentNumber, DateOnly? AgreementDate,
+        string? OrgName, string? OrgSecretary, string? CommunityName,
+        string? ClientName, string? ClientAddress, string? ClientEmbg, string? Plate,
+        string? GuarantorName, string? GuarantorAddress, string? GuarantorEmbg,
+        long Total, long Remaining,
+        IReadOnlyList<AgreementServiceDto> Services,
+        IReadOnlyList<AgreementInstallmentDto> Installments);
+
+    /// <summary>Print bundle for the installment agreement (ДОГОВОР за отплата) — the
+    /// contract the client + guarantor sign. Mirrors legacy rptPaymentDocumentDogovor:
+    /// договор бр. = the BILL number, services fold by payment category with FicalRound
+    /// money (integers on print), Вкупно/Останато rounded to whole denars, and each
+    /// rata shows ДА/НЕ + „платено на ден / да се плати до" (PaidAt for paid,
+    /// DueDate for open — the legacy dual-purpose DatePayed).</summary>
+    [HttpGet("{id:long}/agreement-print")]
+    public async Task<ActionResult<AgreementPrintDto>> AgreementPrint(long id)
+    {
+        var d = await _db.PaymentDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        if (d == null) return NotFound();
+        if (!d.AgreementId.HasValue)
+            return BadRequest(new { error = "Сметката нема договор за рати." });
+
+        var agreement = await _db.InstallmentAgreements.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == d.AgreementId.Value);
+
+        var org = await _db.TechnicalExamOrganizations.AsNoTracking()
+            .Where(o => o.Id == d.OrganizationId)
+            .Select(o => new { o.Name, o.Secretary, o.CommunityId })
+            .FirstOrDefaultAsync();
+        string? communityName = null;
+        if (org?.CommunityId is int commId)
+            communityName = await _db.Communities.AsNoTracking()
+                .Where(c => c.Id == commId).Select(c => c.Name).FirstOrDefaultAsync();
+
+        string? clientName = null, clientAddress = null, clientEmbg = null, plate = null;
+        var rel = await _db.ClientVehicleRelations.AsNoTracking()
+            .Where(r => r.Id == d.CustomerVehicleRelationId)
+            .Select(r => new { r.ClientId, r.VehicleId })
+            .FirstOrDefaultAsync();
+        if (rel != null)
+        {
+            var c = await _db.Clients.AsNoTracking().Where(x => x.Id == rel.ClientId)
+                .Select(x => new { x.FirstName, x.MiddleName, x.LastName, x.Address, x.MB })
+                .FirstOrDefaultAsync();
+            if (c != null)
+            {
+                var n = string.Join(' ', new[] { c.FirstName, c.MiddleName, c.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                clientName = n.Length > 0 ? n : null;
+                clientAddress = c.Address;
+                clientEmbg = c.MB;
+            }
+            if (rel.VehicleId.HasValue)
+                plate = await _db.Vehicles.AsNoTracking()
+                    .Where(x => x.Id == rel.VehicleId.Value).Select(x => x.Plate).FirstOrDefaultAsync();
+        }
+
+        // Services folded by payment category (skip PrePaid — legacy did), FicalRound
+        // per line, printed as whole numbers like the legacy TableUslugi.
+        var linesRaw = await (
+            from l in _db.PaymentDocumentLines.AsNoTracking()
+            join pc in _db.PriceCatalogs.AsNoTracking() on l.PriceCatalogId equals pc.Id
+            where l.PaymentDocumentId == d.Id && l.Active && !l.PrePaid
+            orderby l.Id
+            select new { l.UnitPrice, l.Quantity, l.Discount, l.VatPercent, pc.Name, pc.PaymentCategoryGroupId }
+        ).ToListAsync();
+        var gIds = linesRaw.Where(x => x.PaymentCategoryGroupId.HasValue)
+            .Select(x => x.PaymentCategoryGroupId!.Value).Distinct().ToList();
+        var gNames = await _db.PaymentCategoryGroups.AsNoTracking()
+            .Where(g => gIds.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.Name);
+
+        var folded = new List<(string? Name, double BezDdv, double Ddv)>();
+        double totalGross = 0;
+        foreach (var l in linesRaw)
+        {
+            var soPopust = (double)l.UnitPrice * l.Quantity * (1 - l.Discount / 100);
+            totalGross += soPopust;
+            var bezDdv = FicalRound(soPopust / (1 + l.VatPercent / 100));
+            var ddv = FicalRound(soPopust * l.VatPercent / (100 + l.VatPercent));
+            var name = l.PaymentCategoryGroupId.HasValue
+                ? gNames.GetValueOrDefault(l.PaymentCategoryGroupId.Value)?.Trim() ?? l.Name
+                : l.Name;
+            var hit = folded.FindIndex(f => f.Name == name);
+            if (hit >= 0) folded[hit] = (name, folded[hit].BezDdv + bezDdv, folded[hit].Ddv + ddv);
+            else folded.Add((name, bezDdv, ddv));
+        }
+        var services = folded
+            .Select(f => new AgreementServiceDto(f.Name, (long)Math.Round(f.BezDdv, 0), (long)Math.Round(f.Ddv, 0)))
+            .ToList();
+
+        var insRaw = await _db.InstallmentSchedules.AsNoTracking()
+            .Where(s => s.PaymentDocumentId == d.Id && s.Active)
+            .OrderBy(s => s.SequenceNo)
+            .ToListAsync();
+        var installments = insRaw.Select(s => new AgreementInstallmentDto(
+            s.SequenceNo, (double)s.Amount, s.Paid,
+            s.Paid ? s.PaidAt : s.DueDate?.ToDateTime(TimeOnly.MinValue), s.Note)).ToList();
+
+        var total = (long)Math.Round(totalGross, 0, MidpointRounding.AwayFromZero);
+        var paidSum = insRaw.Where(s => s.Paid).Sum(s => (double)(s.PaidAmount ?? s.Amount));
+        var remaining = (long)Math.Round(totalGross - paidSum, 0, MidpointRounding.AwayFromZero);
+
+        return Ok(new AgreementPrintDto(
+            d.Id, d.DocumentNumber, agreement?.Date,
+            org?.Name, org?.Secretary, communityName,
+            clientName, clientAddress, clientEmbg, plate,
+            agreement?.GuarantorName, agreement?.GuarantorAddress, agreement?.GuarantorEmbg,
+            total, remaining, services, installments));
+    }
+
     /// <summary>Print bundle for СМЕТКОПОТВРДА — the legacy landscape receipt. Per-line
     /// money mirrors legacy PrintPaymentDocumetnByIdDocumetnInfo: everything runs through
     /// FicalRound; ЦЕНА БЕЗ ДДВ = FicalRound(soPopust/(1+ddv/100)), ДДВ = FicalRound(

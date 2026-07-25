@@ -89,6 +89,8 @@
     priceSaveFailed: 'Промената на цената не успеа',
     editPriceHint: 'Кликни за промена на цената',
     printReceipt: 'Сметкопотврда',
+    printAgreement: 'Договор',
+    reprintInstallmentFiscal: 'Повторно печати фискална за оваа рата',
     markPaid: 'Означи платено',
     markUnpaid: 'Означи неплатено',
     statusSaved: 'Статусот е зачуван',

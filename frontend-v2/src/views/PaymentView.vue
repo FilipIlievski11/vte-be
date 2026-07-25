@@ -82,6 +82,33 @@ function openReceiptPrint() {
   const href = router.resolve({ name: 'payment-receipt-print', params: { id: props.id } }).href;
   window.open(href, '_blank');
 }
+// ДОГОВОР за рати (legacy rptPaymentDocumentDogovor) — само за сметки со договор.
+function openAgreementPrint() {
+  const href = router.resolve({ name: 'payment-agreement-print', params: { id: props.id } }).href;
+  window.open(href, '_blank');
+}
+
+// Повторна фискална за ВЕЌЕ платена рата (легаси имаше копче на секоја рата) —
+// на пр. кога печатењето на капарата не поминало првиот пат.
+const reprintSeq = ref<number | null>(null);
+async function reprintInstallmentFiscal(seq: number) {
+  reprintSeq.value = seq;
+  try {
+    const res = await printFiscalForDocument(props.id, true, seq);
+    if (res.status === 'printed')
+      toast.add({ severity: 'success', summary: t('fiscal.printedOk'), life: 3000 });
+    else if (res.status === 'no-folder')
+      toast.add({ severity: 'warn', summary: t('fiscal.noFolder'), detail: t('fiscal.goConfigure'), life: 5000 });
+    else if (res.status === 'error')
+      toast.add({ severity: 'error', summary: t('fiscal.printFailed'), detail: res.message, life: 5000 });
+    else if (res.status === 'skipped')
+      toast.add({ severity: 'info', summary: t('fiscal.skipped'), detail: res.reason, life: 4000 });
+    else
+      toast.add({ severity: 'warn', summary: t('fiscal.unsupportedShort'), life: 5000 });
+  } finally {
+    reprintSeq.value = null;
+  }
+}
 const paidBusy = ref(false);
 async function togglePaid() {
   if (!bill.value || paidBusy.value) return;
@@ -211,6 +238,8 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
           v-tooltip.bottom="fmtDateTime(bill.fiscalPrintedAt)" />
         <Button :label="t('payments.printReceipt')" icon="pi pi-file" size="small" outlined
           @click="openReceiptPrint" />
+        <Button v-if="bill.agreement" :label="t('payments.printAgreement')" icon="pi pi-file-edit" size="small" outlined
+          @click="openAgreementPrint" />
         <Button :label="t('fiscal.printReceipt')" icon="pi pi-print" size="small"
           :loading="fiscalBusy" @click="printFiscal" />
         <Button v-if="!bill.stornoed" size="small" outlined
@@ -395,11 +424,15 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
               />
             </template>
           </Column>
-          <Column :header="''" style="width:120px">
+          <Column :header="''" style="width:150px">
             <template #body="{ data }">
               <Button v-if="!data.paid && !bill.stornoed"
                 :label="t('payments.payInstallment')" icon="pi pi-check" size="small"
                 :loading="payingSeq === data.sequenceNo" @click="payInstallment(data.sequenceNo)" />
+              <Button v-if="data.paid" icon="pi pi-print" size="small" text severity="secondary"
+                :loading="reprintSeq === data.sequenceNo"
+                v-tooltip.left="t('payments.reprintInstallmentFiscal')"
+                @click="reprintInstallmentFiscal(data.sequenceNo)" />
             </template>
           </Column>
         </DataTable>

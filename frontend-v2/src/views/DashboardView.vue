@@ -185,10 +185,20 @@ async function openBillDialog() {
   // reset installment fields
   billInstallments.value = 2;
   billFirstAmount.value = null;
-  billGuarantorName.value = '';
+  // Гарант: легаси dijGarant ги пред-пополнуваше податоците на самиот клиент
+  // (операторот ги менува ако гарант е друго лице). Адресата се влече дополнително.
+  const sel = debts.value.find(d => selectedDebtIds.value.has(d.id));
+  billGuarantorName.value = sel?.clientName ?? '';
+  billGuarantorEmbg.value = sel?.clientMB ?? '';
   billGuarantorAddress.value = '';
-  billGuarantorEmbg.value = '';
   billDialogVisible.value = true;
+  if (sel?.clientMB) {
+    try {
+      const { data } = await api.get<{ items: { mb: string | null; address: string | null }[] }>(
+        '/clients', { params: { q: sel.clientMB, pageSize: 1 } });
+      if (data.items[0]?.mb === sel.clientMB) billGuarantorAddress.value = data.items[0]?.address ?? '';
+    } catch { /* адресата останува празна */ }
+  }
 }
 
 async function createBill() {

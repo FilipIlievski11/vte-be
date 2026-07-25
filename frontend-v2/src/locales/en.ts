@@ -89,6 +89,8 @@
     priceSaveFailed: 'Price change failed',
     editPriceHint: 'Click to change the price',
     printReceipt: 'Receipt (smetkopotvrda)',
+    printAgreement: 'Agreement',
+    reprintInstallmentFiscal: 'Reprint the fiscal receipt for this installment',
     markPaid: 'Mark paid',
     markUnpaid: 'Mark unpaid',
     statusSaved: 'Status saved',

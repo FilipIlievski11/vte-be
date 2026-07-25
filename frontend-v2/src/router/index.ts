@@ -66,6 +66,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    // ДОГОВОР за рати (legacy rptPaymentDocumentDogovor, A4 на празна хартија).
+    path: '/payments/:id/agreement-print',
+    name: 'payment-agreement-print',
+    component: () => import('@/views/print/AgreementPrint.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
     // Барање за одобрение (legacy rptBaranjeZaOdobrenieZaTugoVozilo).
     path: '/vehicle-permissions/:id/request-print',
     name: 'vehicle-permission-request-print',
