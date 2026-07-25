@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import type { LegacySyncStatus, LegacySyncResult } from '@/types';
 import Button from 'primevue/button';
+import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
 
 const { t } = useI18n();
@@ -56,6 +57,34 @@ async function sync() {
 
 onMounted(loadStatus);
 
+// ---- Server-side schedule display ----
+
+/** "03:00,10:00" (UTC) → "05:00 и 12:00" in the browser's local time zone. */
+const autoTimesLocal = computed(() => {
+  const raw = status.value?.autoTimesUtc ?? '';
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const local = parts.map(p => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(p);
+    if (!m) return p;
+    const d = new Date();
+    d.setUTCHours(Number(m[1]), Number(m[2]), 0, 0);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  });
+  return local.join(', ');
+});
+
+function fmtUtc(s: string | null): string {
+  if (!s) return '—';
+  const d = new Date(s.endsWith('Z') ? s : s + 'Z');
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+
+const lastRunSummary = computed(() => {
+  const r = status.value?.lastRun?.result;
+  if (!r) return null;
+  return r.clients + r.vehicles + r.requests + r.technicalExamReports;
+});
+
 const resultRows = () => result.value ? [
   { key: 'clients',         val: result.value.clients },
   { key: 'vehicles',        val: result.value.vehicles },
@@ -88,6 +117,40 @@ const resultRows = () => result.value ? [
       </div>
       <div v-else class="err">{{ t('legacySync.statusError') }}</div>
       <p v-if="status && !status.enabled" class="warn">{{ t('legacySync.disabled') }}</p>
+    </section>
+
+    <!-- Server-side schedule + last run -->
+    <section v-if="status" class="card">
+      <h2>{{ t('legacySync.auto.title') }}</h2>
+      <div class="auto-grid">
+        <div class="field">
+          <label>{{ t('legacySync.auto.schedule') }}</label>
+          <div class="val">
+            <template v-if="status.autoTimesUtc">
+              {{ t('legacySync.auto.daily', { times: autoTimesLocal }) }}
+              <span class="muted small">(UTC: {{ status.autoTimesUtc }})</span>
+            </template>
+            <template v-else>{{ t('legacySync.auto.off') }}</template>
+          </div>
+        </div>
+        <div class="field">
+          <label>{{ t('legacySync.auto.lastRun') }}</label>
+          <div class="val" v-if="status.running">
+            <Tag :value="t('legacySync.auto.runningNow')" severity="info" />
+          </div>
+          <div class="val" v-else-if="status.lastRun">
+            <Tag :value="status.lastRun.succeeded ? t('legacySync.auto.ok') : t('legacySync.auto.failed')"
+                 :severity="status.lastRun.succeeded ? 'success' : 'danger'" />
+            {{ fmtUtc(status.lastRun.finishedAtUtc ?? status.lastRun.startedAtUtc) }}
+            <span class="muted small">
+              · {{ status.lastRun.trigger === 'manual' ? t('legacySync.auto.trigManual') : t('legacySync.auto.trigAuto') }}
+              <template v-if="status.lastRun.succeeded && lastRunSummary != null"> · +{{ lastRunSummary }} {{ t('legacySync.auto.newRecords') }}</template>
+            </span>
+            <div v-if="status.lastRun.error" class="err small">{{ status.lastRun.error }}</div>
+          </div>
+          <div class="val muted" v-else>{{ t('legacySync.auto.never') }}</div>
+        </div>
+      </div>
     </section>
 
     <!-- Action -->
@@ -141,6 +204,11 @@ const resultRows = () => result.value ? [
 .muted { color: var(--text-muted, #6b7280); }
 .warn { color: #b45309; margin: .75rem 0 0; }
 .err { color: #b91c1c; }
+.small { font-size: .8rem; }
+.auto-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 1rem; }
+.auto-grid .field { display: flex; flex-direction: column; gap: .3rem; }
+.auto-grid label { font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted, #6b7280); }
+.auto-grid .val { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .92rem; }
 .ms { color: #9ca3af; font-weight: 400; font-size: .85rem; }
 .result-table { width: 100%; border-collapse: collapse; }
 .result-table td { padding: .45rem .25rem; border-bottom: 1px solid var(--surface-border, #f1f5f9); }

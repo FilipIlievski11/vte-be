@@ -139,7 +139,7 @@ For legacy references when you need ground truth:
 - SSH: `ssh -i ~/.ssh/vte_deploy root@116.202.8.155`
 - **Redeploy** = `.\deploy\build-release.ps1` → scp `release.zip` to `/opt/vte/app/` → unzip to `publish/` → `docker compose up -d --build api`
 - Production DB carries the REAL data since 2026-06-13 (lifted via .bak restore from Filip's laptop: ~32k clients / 66k vehicles / 128k requests / 100k tech-exams). Re-lift = backup local VTE → gzip → scp → `docker cp` into mssql container → `RESTORE DATABASE ... WITH REPLACE` (stop api container first). Admin password on prod = the strong one in `deploy/prod.secrets.local`, NOT the local dev default.
-- `LegacySync` is disabled in prod (`LegacySync__Enabled=false` in `.env`)
+- `LegacySync` is ENABLED in prod since 2026-07-25 (`LegacySync__Enabled: "true"` in docker-compose.yml api env) with a server-side scheduler: `LegacySync__AutoTimesUtc: "03:00,10:00"` (= 05:00/12:00 MK summer) runs `LegacySyncScheduler`/`LegacySyncService` (VTE.Api/Services) — same embedded SQL as the admin button. Admin UI „Синхронизација" shows schedule + last run; manual runs from the prod UI work too. Laptop script `run-legacy-sync.ps1` still useful (pulls the offsite DB backup).
 - **DB backups**: nightly cron 01:15 UTC runs `/opt/vte/backup-db.sh` (source: `deploy/backup-db.sh`) — BACKUP+VERIFYONLY → `/opt/vte/backups/vte-YYYYMMDD.bak.gz`, keeps 14. `run-legacy-sync.ps1` step 5 pulls the newest to `C:\Users\filip\VTE-backups` (keeps 10). Restore procedure: `docs/14-db-backup.md`.
 
 ## How to run

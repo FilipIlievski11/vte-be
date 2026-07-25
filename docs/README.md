@@ -30,7 +30,7 @@ Running or deploying it? Go straight to **09**. Setting up a station? **11** (+ 
 | 09 | [Deployment & operations](09-deployment-and-operations.md) | The Hetzner/Docker prod stack, the build-release → deploy flow, secrets, the SSH tunnel for local dev against prod, EF auto-migrate, and the DB re-lift procedure. |
 | 10 | [Legacy data migration](10-data-migration.md) | Importing real data from the legacy VTEZVV DB: the snapshot, the `migrate/*.sql` scripts, incremental top-up, and the migration gotchas. |
 | 11 | [Operator & admin guide](11-operator-guide.md) | Task-oriented daily-use walkthrough (in Macedonian terms): create a request, finish it, print, do an exam, bill, fiscal-print, and admin screens. |
-| 12 | [Рачен sync со легаси](12-legacy-sync.md) | How to pull fresh legacy data into prod yourself: the one-click `deploy/run-legacy-sync.ps1`, what the sync does, the manual 3-window fallback, and troubleshooting. |
+| 12 | [Sync со легаси](12-legacy-sync.md) | The server-side scheduled auto-sync (05:00/12:00, visible on the admin Синхронизација screen), manual runs from the UI or the one-click `deploy/run-legacy-sync.ps1`, what the sync does, and troubleshooting. |
 | 13 | [Рачно качување на прод](13-deploy.md) | How to ship a new version yourself: the one-click `deploy/deploy-to-prod.ps1` (build → upload → docker rebuild → verify), server-side release backups, rollback, and troubleshooting. |
 | 14 | [Резерви на прод базата](14-db-backup.md) | The two-layer DB backup: nightly server-side `backup-db.sh` (03:15, verify + 14-day rotation) + offsite pull to the laptop on every legacy sync; restore procedure and checks. |
 

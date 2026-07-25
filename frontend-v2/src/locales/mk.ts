@@ -971,6 +971,20 @@ export default {
     doneTitle: 'Синхронизацијата заврши',
     doneDetail: '+{clients} клиенти, +{vehicles} возила, +{requests} барања за {ms} ms.',
     errorTitle: 'Грешка при синхронизација',
+    auto: {
+      title: 'Автоматска синхронизација (на серверот)',
+      schedule: 'Распоред',
+      daily: 'Секој ден во {times}',
+      off: 'Исклучена — само рачно',
+      lastRun: 'Последно извршување',
+      runningNow: 'Во тек…',
+      ok: 'Успешно',
+      failed: 'Неуспешно',
+      trigManual: 'рачно',
+      trigAuto: 'автоматски',
+      newRecords: 'нови записи',
+      never: 'Сè уште нема извршување (од стартот на серверот).',
+    },
   },
 
   requestTypes: {

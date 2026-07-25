@@ -971,6 +971,20 @@ export default {
     doneTitle: 'Sync complete',
     doneDetail: '+{clients} clients, +{vehicles} vehicles, +{requests} requests in {ms} ms.',
     errorTitle: 'Sync failed',
+    auto: {
+      title: 'Automatic sync (server-side)',
+      schedule: 'Schedule',
+      daily: 'Every day at {times}',
+      off: 'Off — manual only',
+      lastRun: 'Last run',
+      runningNow: 'Running…',
+      ok: 'Success',
+      failed: 'Failed',
+      trigManual: 'manual',
+      trigAuto: 'scheduled',
+      newRecords: 'new records',
+      never: 'No runs yet (since the server started).',
+    },
   },
 
   requestTypes: {

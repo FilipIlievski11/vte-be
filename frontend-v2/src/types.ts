@@ -579,6 +579,20 @@ export interface LegacySyncStatus {
   vehicles: number;
   requests: number;
   technicalExamReports: number;
+  /** Comma-separated UTC "HH:mm" fire times of the server-side scheduler (empty = off). */
+  autoTimesUtc: string | null;
+  /** A sync (manual or scheduled) is running right now. */
+  running: boolean;
+  lastRun: LegacySyncLastRun | null;
+}
+/** Snapshot of the most recent sync run (manual or scheduled), from the API state. */
+export interface LegacySyncLastRun {
+  startedAtUtc: string | null;
+  finishedAtUtc: string | null;
+  succeeded: boolean | null;
+  trigger: string | null;
+  error: string | null;
+  result: LegacySyncResult | null;
 }
 /** Result of a one-click incremental sync from the live legacy DB. */
 export interface LegacySyncResult {

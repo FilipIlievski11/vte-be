@@ -49,6 +49,9 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 // -------- Pricing (Phase 3: auto-debt creation) --------
 builder.Services.AddScoped<VTE.Infrastructure.Pricing.IPricingEvaluator, VTE.Infrastructure.Pricing.PricingEvaluator>();
 builder.Services.AddScoped<VTE.Infrastructure.Pricing.IDebtService, VTE.Infrastructure.Pricing.DebtService>();
+builder.Services.AddSingleton<VTE.Api.Services.LegacySyncState>();
+builder.Services.AddScoped<VTE.Api.Services.LegacySyncService>();
+builder.Services.AddHostedService<VTE.Api.Services.LegacySyncScheduler>();
 
 // -------- Authentication: BOTH JWT (default) + Cookie --------
 builder.Services.AddAuthentication(opts =>
