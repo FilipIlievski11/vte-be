@@ -31,5 +31,6 @@ Running or deploying it? Go straight to **09**. Setting up a station? **11** (+ 
 | 10 | [Legacy data migration](10-data-migration.md) | Importing real data from the legacy VTEZVV DB: the snapshot, the `migrate/*.sql` scripts, incremental top-up, and the migration gotchas. |
 | 11 | [Operator & admin guide](11-operator-guide.md) | Task-oriented daily-use walkthrough (in Macedonian terms): create a request, finish it, print, do an exam, bill, fiscal-print, and admin screens. |
 | 12 | [Рачен sync со легаси](12-legacy-sync.md) | How to pull fresh legacy data into prod yourself: the one-click `deploy/run-legacy-sync.ps1`, what the sync does, the manual 3-window fallback, and troubleshooting. |
+| 13 | [Рачно качување на прод](13-deploy.md) | How to ship a new version yourself: the one-click `deploy/deploy-to-prod.ps1` (build → upload → docker rebuild → verify), server-side release backups, rollback, and troubleshooting. |
 
 > The older [`DEPLOYMENT.md`](DEPLOYMENT.md) predates this set — **09** is the canonical deployment reference.
