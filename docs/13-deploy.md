@@ -93,6 +93,18 @@ ssh -i $env:USERPROFILE\.ssh\vte_deploy root@116.202.8.155 "cd /opt/vte/app && r
 | API не се крева по деплој | `ssh … "cd /opt/vte && docker compose logs api --tail 50"` — најчесто грешка при миграција; јави се. |
 | `vite build` паѓа | Има TypeScript/build грешка во кодот — не се качува скршена верзија; поправи прво локално. |
 
+## Кратенки на Desktop (сите три)
+
+| Кратенка | Што прави | Скрипта |
+|---|---|---|
+| **VTE Sync so legacy** | Свежи податоци од стариот систем + офсајт DB backup | `deploy/run-legacy-sync.ps1` |
+| **VTE Kaci na prod** | Нова верзија на продукција (прашува Y/N) | `deploy/deploy-to-prod.ps1` |
+| **VTE Push na GitHub** | Ги пушта локалните комити на GitHub (код-резерва) | `deploy/push-to-github.ps1` |
+
+> Push и деплој се независни: push е резерва на кодот на GitHub; деплој е она што
+> станицата го користи. Редослед кога има нови промени: прво push, па деплој (или обратно
+> — сеедно, само не заборавај ги двете).
+
 ## Поврзано
 
 - [09 — Deployment & operations](09-deployment-and-operations.md) — целиот прод стек, тајни, DB re-lift.
