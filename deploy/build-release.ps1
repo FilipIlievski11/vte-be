@@ -27,6 +27,16 @@ $wwwroot = Join-Path $publish 'wwwroot'
 New-Item -ItemType Directory -Force $wwwroot | Out-Null
 Copy-Item "$root\frontend-v2\dist\*" -Destination $wwwroot -Recurse -Force
 
+# Version marker: "<git-hash>[-dirty] <build time>" -> served at /version.txt on prod.
+# deploy-to-prod.ps1 reads it to warn when prod already runs the same version.
+$gitHash = (git -C $root rev-parse --short HEAD)
+if ($LASTEXITCODE -eq 0 -and $gitHash) {
+    if (git -C $root status --porcelain) { $gitHash = "$gitHash-dirty" }
+    $verLine = "{0} {1}" -f $gitHash, (Get-Date -Format 'yyyy-MM-dd HH:mm')
+    [IO.File]::WriteAllText((Join-Path $wwwroot 'version.txt'), $verLine, [Text.UTF8Encoding]::new($false))
+    Write-Host "      Version marker: $verLine" -ForegroundColor DarkGray
+}
+
 Write-Host "[4/4] Zipping..." -ForegroundColor Cyan
 $zip = Join-Path $OutDir 'release.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }

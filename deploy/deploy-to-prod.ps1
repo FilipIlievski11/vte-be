@@ -24,9 +24,35 @@ $sshKey = "$env:USERPROFILE\.ssh\vte_deploy"
 $server = 'root@116.202.8.155'
 $prodUrl = 'https://116.202.8.155.sslip.io'
 
+# --- 0. Спореди верзии: што врти на прод vs што ќе качиш ---
+$localHash = (git -C $root rev-parse --short HEAD)
+$dirty = [bool](git -C $root status --porcelain)
+if ($dirty) { $localVer = "$localHash-dirty" } else { $localVer = $localHash }
+$prodVer = $null; $prodStamp = $null
+try {
+    $vt = (Invoke-WebRequest -Uri "$prodUrl/version.txt" -UseBasicParsing -TimeoutSec 10).Content.Trim()
+    if ($vt -match '^([0-9a-f]+(?:-dirty)?) (.+)$') { $prodVer = $Matches[1]; $prodStamp = $Matches[2] }
+} catch { }
+
+if ($prodVer) {
+    Write-Host ("Прод сега врти:  {0}  (качено {1})" -f $prodVer, $prodStamp)
+} else {
+    Write-Host 'Прод сега врти:  (непозната верзија — качена пред да постои маркерот)' -ForegroundColor DarkGray
+}
+if ($dirty) {
+    Write-Host ("Ќе качиш:        {0}  (внимание: има некомитирани локални промени)" -f $localVer) -ForegroundColor Yellow
+} else {
+    Write-Host ("Ќе качиш:        {0}" -f $localVer)
+}
+$sameVersion = (-not $dirty) -and ($prodVer -eq $localVer)
+if ($sameVersion) {
+    Write-Host 'ВНИМАНИЕ: прод ВЕЌЕ е на оваа верзија — нема нови промени за качување.' -ForegroundColor Yellow
+}
+
 if (-not $Force) {
     Write-Host 'Ова ќе ја ЗАМЕНИ верзијата на продукција (116.202.8.155.sslip.io).' -ForegroundColor Yellow
-    $answer = Read-Host 'Продолжи? (Y/N)'
+    if ($sameVersion) { $prompt = 'Прод е веќе на оваа верзија — продолжи сепак? (Y/N)' } else { $prompt = 'Продолжи? (Y/N)' }
+    $answer = Read-Host $prompt
     if ($answer -notin @('Y', 'y', 'D', 'd', 'da', 'DA', 'Da')) { Write-Host 'Откажано.'; return }
 }
 
@@ -86,12 +112,22 @@ if (-not $alive) { throw 'Прод API не одговори за ~1 мин — 
 Write-Host '[5/5] Проверувам дека прод служи иста верзија…'
 $html = (Invoke-WebRequest -Uri $prodUrl -UseBasicParsing -TimeoutSec 15).Content
 if ($html -match 'index-[A-Za-z0-9_-]+\.js') { $prodBundle = $Matches[0] } else { $prodBundle = '(не најден)' }
+$newProdVer = $null
+try {
+    $vt2 = (Invoke-WebRequest -Uri "$prodUrl/version.txt" -UseBasicParsing -TimeoutSec 10).Content.Trim()
+    if ($vt2 -match '^([0-9a-f]+(?:-dirty)?) (.+)$') { $newProdVer = $Matches[1] }
+} catch { }
 
 Write-Host ''
 if ($prodBundle -eq $localBundle) {
     Write-Host ("ДЕПЛОЈ УСПЕШЕН — прод е на {0} (идентично со локалниот билд)." -f $prodBundle) -ForegroundColor Green
 } else {
     Write-Host ("ВНИМАНИЕ: прод служи {0}, локално {1} — освежи со Ctrl+F5 па провери повторно; ако не се совпадне, повтори го деплојот." -f $prodBundle, $localBundle) -ForegroundColor Yellow
+}
+if ($newProdVer -eq $localVer) {
+    Write-Host ("Верзија на прод: {0} — потврдено." -f $newProdVer) -ForegroundColor Green
+} elseif ($newProdVer) {
+    Write-Host ("ВНИМАНИЕ: прод пријавува верзија {0}, а качуваше {1}." -f $newProdVer, $localVer) -ForegroundColor Yellow
 }
 Write-Host ("Резерва зачувана на серверот: /opt/vte/app/releases/release-{0}.zip" -f $stamp) -ForegroundColor DarkGray
 Write-Host 'Забелешка: локалниот dev API беше изгасен за билдот — пушти го повторно ако ти треба (dotnet run во backend-v2/src/VTE.Api).' -ForegroundColor DarkGray
