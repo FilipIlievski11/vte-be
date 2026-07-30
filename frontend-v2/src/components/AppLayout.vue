@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
@@ -140,6 +140,28 @@ async function logout() {
   auth.clear();
   router.push('/login');
 }
+
+// ---- Ноќни задачи (backup + авто-sync): предупредувачки banner за admin ----
+// Наместо надворешен alerting сервис, апликацијата сама кажува кога нешто ноќно
+// не поминало — Филип ја отвора секој ден, banner-от не се пропушта.
+interface OpsJob { ok: boolean; note: string | null }
+const opsProblems = ref<string[]>([]);
+async function checkOpsHealth() {
+  if (!auth.isAdmin) return;
+  try {
+    const { data } = await api.get<{ backup: OpsJob | null; sync: OpsJob | null }>('/admin/ops-health');
+    const p: string[] = [];
+    if (data.backup && !data.backup.ok) p.push(`${t('opsHealth.backup')}: ${data.backup.note ?? '!'}`);
+    if (data.sync && !data.sync.ok) p.push(`${t('opsHealth.sync')}: ${data.sync.note ?? '!'}`);
+    opsProblems.value = p;
+  } catch { /* тивко — не е критично за работа */ }
+}
+let opsTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  checkOpsHealth();
+  opsTimer = setInterval(checkOpsHealth, 60 * 60 * 1000);
+});
+onBeforeUnmount(() => clearInterval(opsTimer));
 </script>
 
 <template>
@@ -282,6 +304,24 @@ async function logout() {
       </div>
     </header>
 
-    <main class="app-content"><RouterView /></main>
+    <main class="app-content">
+      <div v-if="opsProblems.length" class="ops-banner">
+        <i class="pi pi-exclamation-triangle" />
+        <strong>{{ t('opsHealth.title') }}</strong>
+        <span v-for="(p, i) in opsProblems" :key="i" class="ops-item">{{ p }}</span>
+      </div>
+      <RouterView />
+    </main>
   </div>
 </template>
+
+<style scoped>
+.ops-banner {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b;
+  border-radius: 8px; padding: .5rem .9rem; margin-bottom: .75rem;
+  font-size: .85rem;
+}
+html.app-dark .ops-banner { background: #450a0a; border-color: #7f1d1d; color: #fecaca; }
+.ops-banner .ops-item + .ops-item::before { content: '·'; margin-right: .6rem; }
+</style>

@@ -123,6 +123,7 @@ For legacy references when you need ground truth:
 - ✅ **Tech-exam Записник + certificate prints**.
 - ✅ **Plav (3-page) + Zelen prints pixel-perfect**.
 - ❌ **#70 BelTemplate.vue — DROPPED by Filip's decision 2026-07-26 („zaboravi go beliot obrazec")**. Do not resurrect. (Layout JSON stays at `scripts/print-layout-bel.json` if he ever changes his mind.)
+- ❌ **Duplicate-client merge tool — DROPPED by Filip's decision 2026-07-30 („5 ne go pravi nikako")**. Do not propose or build it again.
 - ✅ Permission + IDL debt hooks EXIST (VehiclePermissionsController / InternationalDrivingLicencesController inject IDebtService) — the old "deferred" note was stale.
 - 🟡 **Deferred**: sentinel-VehicleField price multiplier (verified dead on prod — gotcha #8); multi-Trigger support on one `PriceCatalog` row (see gotcha #13).
 

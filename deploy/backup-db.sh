@@ -19,8 +19,20 @@ VOL=/var/lib/docker/volumes/vte_mssql-data/_data
 STAMP=$(date +%Y%m%d)
 BAK="vte-$STAMP.bak"
 
+# Status file inside the attachments volume — the API serves it as
+# /api/admin/ops-health so the app can show a warning banner when a night
+# backup fails or goes missing. No compose changes needed (volume already mounted).
+OPS=/var/lib/docker/volumes/vte_attachments/_data/ops
+mkdir -p "$OPS"
+write_status() {
+    printf '{"lastAttemptUtc":"%s","lastAttemptOk":%s,"lastSuccessUtc":"%s","file":"%s"}\n' \
+        "$(date -u +%FT%TZ)" "$1" "$2" "$3" > "$OPS/backup-status.json.tmp"
+    mv "$OPS/backup-status.json.tmp" "$OPS/backup-status.json"
+}
+PREV_SUCCESS=$(grep -o '"lastSuccessUtc":"[^"]*"' "$OPS/backup-status.json" 2>/dev/null | cut -d'"' -f4 || true)
+
 mkdir -p "$OUT"
-trap 'echo "[$(date "+%F %T")] ERROR — backup FAILED (see lines above)" >> "$LOG"' ERR
+trap 'echo "[$(date "+%F %T")] ERROR — backup FAILED (see lines above)" >> "$LOG"; write_status false "$PREV_SUCCESS" ""' ERR
 
 echo "[$(date '+%F %T')] starting backup $BAK" >> "$LOG"
 
@@ -45,4 +57,5 @@ ls -t "$OUT"/vte-*.bak.gz | tail -n +15 | xargs -r rm --
 
 SIZE=$(du -h "$OUT/$BAK.gz" | cut -f1)
 echo "[$(date '+%F %T')] OK $BAK.gz ($SIZE), verify passed" >> "$LOG"
+write_status true "$(date -u +%FT%TZ)" "$BAK.gz"
 tail -n 500 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"

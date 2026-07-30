@@ -40,6 +40,12 @@
     },
   },
 
+  opsHealth: {
+    title: 'ATTENTION — night jobs:',
+    backup: 'Database backup',
+    sync: 'Auto-sync',
+  },
+
   search: {
     placeholder: 'Search: plate, EMBG, name, VIN…',
     minChars: 'Type at least 2 characters.',
