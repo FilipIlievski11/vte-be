@@ -172,12 +172,15 @@ function groupOffset(kind: 'client' | 'vehicle'): number {
   width: 100%;
   padding: .38rem 3.4rem .38rem 2rem;
   font-size: .85rem;
-  border: 1px solid var(--p-surface-300, #d1d5db);
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 8px;
-  background: var(--p-surface-0, #fff);
-  color: inherit;
+  /* Тема-свесни бои од самата апликација (се флипуваат под html.app-dark) —
+     PrimeVue surface токените овде даваа темни букви на темна позадина. */
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
   outline: none;
 }
+.gs-input::placeholder { color: var(--color-text-muted, #9ca3af); }
 .gs-input:focus { border-color: var(--p-primary-400, #60a5fa); box-shadow: 0 0 0 2px color-mix(in srgb, var(--p-primary-400, #60a5fa) 25%, transparent); }
 .gs-kbd {
   position: absolute; right: .5rem;
