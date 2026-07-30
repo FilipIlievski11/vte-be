@@ -506,7 +506,7 @@ const hasContent = computed(() =>
   background: color-mix(in srgb, var(--p-primary-color) 14%, transparent);
   color: var(--p-primary-color); font-size: 1.05rem;
 }
-.tb-title h1 { margin: 0; font-size: 1.05rem; font-weight: 700; line-height: 1.2 }
+.tb-title h1 { margin: 0; font-size: 1.3rem; font-weight: 700; line-height: 1.2 }
 .tb-sub { margin: .1rem 0 0; font-size: .74rem; color: var(--p-text-muted-color) }
 
 .period-pick {

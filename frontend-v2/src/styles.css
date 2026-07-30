@@ -269,7 +269,9 @@ a:hover { text-decoration: underline; }
   margin-bottom: 1.25rem;
   flex-wrap: wrap;
 }
-.page-header h1 { margin: 0; }
+/* One title standard app-wide: pages/details 1.3rem; dense FORM views override
+   to 1.125rem locally (.xxx-form .page-header h1). */
+.page-header h1 { margin: 0; font-size: 1.3rem; }
 .page-header .subtitle { color: var(--color-text-muted); font-size: 0.875rem; margin-top: 0.125rem; }
 .page-header .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 

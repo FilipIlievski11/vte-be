@@ -5,7 +5,6 @@ import { api } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 import type { MeResponse, ProfileUpdate, ChangePasswordRequest } from '@/types';
 import Button from 'primevue/button';
-import Card from 'primevue/card';
 import InputText from 'primevue/inputtext';
 import Password from 'primevue/password';
 import { useToast } from 'primevue/usetoast';
@@ -93,6 +92,7 @@ onMounted(loadMe);
 </script>
 
 <template>
+  <div class="account-page">
   <div class="page-header">
     <div>
       <h1>{{ t('account.title') }}</h1>
@@ -103,9 +103,9 @@ onMounted(loadMe);
   <div v-if="loading" class="muted pad">{{ t('common.loading') }}…</div>
 
   <div v-else class="cards-grid">
-    <Card class="card">
-      <template #title>{{ t('account.profile.title') }}</template>
-      <template #content>
+    <div class="card">
+      <div class="card-header">{{ t('account.profile.title') }}</div>
+      <div class="card-body">
         <div class="grid two-col">
           <div class="field">
             <label>{{ t('account.profile.userName') }}</label>
@@ -131,12 +131,12 @@ onMounted(loadMe);
         <div class="card-actions">
           <Button :label="t('common.save')" icon="pi pi-check" size="small" :loading="savingProfile" @click="saveProfile" />
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
 
-    <Card class="card">
-      <template #title>{{ t('account.password.title') }}</template>
-      <template #content>
+    <div class="card">
+      <div class="card-header">{{ t('account.password.title') }}</div>
+      <div class="card-body">
         <p class="muted small">{{ t('account.password.hint') }}</p>
         <div class="grid two-col">
           <div class="field">
@@ -159,18 +159,39 @@ onMounted(loadMe);
         <div class="card-actions">
           <Button :label="t('account.password.change')" icon="pi pi-key" size="small" :loading="savingPassword" @click="changePassword" />
         </div>
-      </template>
-    </Card>
+      </div>
+    </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
-.cards-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; max-width: 760px }
+/* Same v1-style cards as the other forms (accent stripe, dense inputs). */
+.account-page { max-width: 760px; margin: 0 auto; }
+.account-page :deep(.card .card-header) {
+  padding: 0.45rem 0.875rem; font-size: 0.8125rem; font-weight: 600;
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 92%, var(--color-brand-500)) 0%, var(--color-surface) 100%);
+}
+.account-page :deep(.card .card-header)::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--color-brand-500); border-radius: 0 2px 2px 0;
+}
+.account-page :deep(.card .card-body) { padding: 0.625rem 0.875rem; }
+.account-page :deep(.p-inputtext) { width: 100%; padding: 0.3rem 0.5rem; font-size: 0.8125rem; min-height: auto; }
+.account-page :deep(.p-inputtext:focus) {
+  outline: none;
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-500) 25%, transparent);
+}
+
+.cards-grid { display: grid; grid-template-columns: 1fr; gap: .5rem }
 .card { width: 100% }
-.grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem }
-.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .85rem }
+.grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: .625rem }
+.field { display: flex; flex-direction: column; gap: .15rem; margin-bottom: .45rem }
 .field.span-full { grid-column: 1 / -1 }
-.field label { font-weight: 600; font-size: .85rem; color: var(--p-text-muted-color) }
+.field label { font-weight: 500; font-size: .75rem; color: var(--color-text-secondary) }
 .val.readonly { padding: .45rem .25rem; font-size: .9rem }
 .mono { font-family: monospace }
 .muted { color: var(--p-text-muted-color) }

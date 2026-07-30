@@ -14,6 +14,7 @@ import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -326,7 +327,9 @@ onMounted(async () => {
       <DataTable :value="rules" :loading="rulesLoading" dataKey="id"
         scrollable scrollHeight="flex" stripedRows size="small" class="rules-table"
         :rowClass="(r: PriceCatalog) => r.active ? '' : 'row-inactive'">
-        <template #empty><div class="empty-state">{{ t('billingCats.noRules') }}</div></template>
+        <template #empty>
+        <PagedTableEmpty icon="pi-list" :title="t('billingCats.noRules')" :hint="t('empty.noRulesHint')" />
+      </template>
         <Column :header="t('billingCats.col.name')">
           <template #body="{ data }">
             <div class="name-cell">

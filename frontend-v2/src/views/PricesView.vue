@@ -22,6 +22,7 @@ import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
 import { useConfirm } from 'primevue/useconfirm';
 
 const { t } = useI18n();
@@ -327,7 +328,7 @@ onMounted(async () => {
         scrollable scrollHeight="flex" stripedRows size="small" class="prices-table"
         :rowClass="(r: PriceCatalog) => r.active ? '' : 'row-inactive'">
         <template #empty>
-          <div class="empty-state">{{ t('prices.empty') }}</div>
+          <PagedTableEmpty icon="pi-tags" :title="t('prices.empty')" :hint="t('empty.noRulesHint')" />
         </template>
 
         <Column field="name" :header="t('prices.col.name')">

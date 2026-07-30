@@ -129,7 +129,7 @@ function entityLink(r: AuditRow): string | null {
 <style scoped>
 .audit-view { max-width: 1100px; margin: 0 auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; }
-.page-head h1 { margin: 0; font-size: 1.5rem; }
+.page-head h1 { margin: 0; font-size: 1.3rem; }
 .page-head .sub { margin: .25rem 0 0; color: var(--text-muted, #6b7280); }
 .controls { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .ctl-action { min-width: 15rem; }

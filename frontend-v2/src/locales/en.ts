@@ -94,6 +94,8 @@
     priceSaved: 'Price saved',
     priceSaveFailed: 'Price change failed',
     editPriceHint: 'Click to change the price',
+    mainSection: 'Basic details',
+    printMenu: 'Print',
     printReceipt: 'Receipt (smetkopotvrda)',
     printAgreement: 'Agreement',
     reprintInstallmentFiscal: 'Reprint the fiscal receipt for this installment',
@@ -1332,6 +1334,9 @@
     noResults: 'No results',
     noResultsFor: 'No client matches "{q}".',
     noRows: 'No rows.',
+    noRowsHint: 'Add a record to get started.',
+    noRules: 'No rules in this category',
+    noRulesHint: 'Pick another category or add a new rule.',
   },
 
   companies: {

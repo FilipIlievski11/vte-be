@@ -13,6 +13,7 @@ import Select from 'primevue/select';
 import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
 import { useConfirm } from 'primevue/useconfirm';
 
 const { t } = useI18n();
@@ -87,7 +88,10 @@ function companyName(id: number) { return companies.value.find(c => c.id === id)
   </div>
 
   <DataTable :value="rows" :loading="loading" size="small" stripedRows dataKey="id">
-    <template #empty><div class="muted" style="padding:1rem">{{ t('stations.none') }}</div></template>
+    <template #empty>
+      <PagedTableEmpty icon="pi-map-marker" :title="t('stations.none')" :hint="t('empty.noRowsHint')"
+        :ctaLabel="t('stations.new')" @cta="openNew" />
+    </template>
     <Column field="id" :header="t('ref.fields.id')" style="width:80px" />
     <Column field="name" :header="t('ref.fields.name')" />
     <Column :header="t('admin.companies')">

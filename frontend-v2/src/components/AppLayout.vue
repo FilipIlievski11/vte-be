@@ -162,6 +162,20 @@ onMounted(() => {
   opsTimer = setInterval(checkOpsHealth, 60 * 60 * 1000);
 });
 onBeforeUnmount(() => clearInterval(opsTimer));
+
+// Верзија на билдот (git hash од /version.txt, пишува build-release.ps1) — во
+// футерот на sidebar-от, за да се гледа која верзија вози без надворешен линк.
+// Локално (Vite) фајлот не постои → останува празно.
+const appVersion = ref('');
+onMounted(async () => {
+  try {
+    const r = await fetch('/version.txt', { cache: 'no-cache' });
+    if (r.ok) {
+      const m = /^[0-9a-f]{6,}(?:-dirty)?/.exec((await r.text()).trim());
+      if (m) appVersion.value = m[0];
+    }
+  } catch { /* нема верзиски маркер — скриено */ }
+});
 </script>
 
 <template>
@@ -250,7 +264,9 @@ onBeforeUnmount(() => clearInterval(opsTimer));
         </div>
       </div>
 
-      <div class="footer">{{ new Date().getFullYear() }} · SMFSolution</div>
+      <div class="footer">
+        {{ new Date().getFullYear() }} · SMFSolution<template v-if="appVersion"> · <span class="ver">{{ appVersion }}</span></template>
+      </div>
     </aside>
 
     <header class="app-topbar">
@@ -316,6 +332,8 @@ onBeforeUnmount(() => clearInterval(opsTimer));
 </template>
 
 <style scoped>
+.ver { font-family: monospace; opacity: .8; }
+
 .ops-banner {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
   background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b;

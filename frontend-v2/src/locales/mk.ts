@@ -94,6 +94,8 @@
     priceSaved: 'Цената е зачувана',
     priceSaveFailed: 'Промената на цената не успеа',
     editPriceHint: 'Кликни за промена на цената',
+    mainSection: 'Основни податоци',
+    printMenu: 'Печати',
     printReceipt: 'Сметкопотврда',
     printAgreement: 'Договор',
     reprintInstallmentFiscal: 'Повторно печати фискална за оваа рата',
@@ -1332,6 +1334,9 @@
     noResults: 'Нема резултати',
     noResultsFor: 'Не е најден ниту еден клиент за "{q}".',
     noRows: 'Нема записи.',
+    noRowsHint: 'Додадете запис за да започнете.',
+    noRules: 'Нема ставки во оваа категорија',
+    noRulesHint: 'Изберете друга категорија или додадете нова ставка.',
   },
 
   companies: {

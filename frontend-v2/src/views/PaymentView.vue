@@ -11,6 +11,7 @@ import Column from 'primevue/column';
 import InputNumber from 'primevue/inputnumber';
 import Dialog from 'primevue/dialog';
 import Textarea from 'primevue/textarea';
+import Menu from 'primevue/menu';
 import { useToast } from 'primevue/usetoast';
 import { printFiscalForDocument } from '@/fiscal/fiscal';
 
@@ -87,6 +88,17 @@ function openAgreementPrint() {
   const href = router.resolve({ name: 'payment-agreement-print', params: { id: props.id } }).href;
   window.open(href, '_blank');
 }
+
+// Едно „Печати" мени наместо три посебни копчиња (header-от се претрупуваше).
+const printMenu = ref();
+const printMenuItems = computed(() => [
+  { label: t('fiscal.printReceipt'), icon: 'pi pi-print', command: () => printFiscal() },
+  { label: t('payments.printReceipt'), icon: 'pi pi-file', command: () => openReceiptPrint() },
+  ...(bill.value?.agreement
+    ? [{ label: t('payments.printAgreement'), icon: 'pi pi-file-edit', command: () => openAgreementPrint() }]
+    : []),
+]);
+function togglePrintMenu(e: Event) { printMenu.value?.toggle(e); }
 
 // Повторна фискална за ВЕЌЕ платена рата (легаси имаше копче на секоја рата) —
 // на пр. кога печатењето на капарата не поминало првиот пат.
@@ -236,12 +248,12 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
       <div class="head-right" v-if="bill">
         <Tag v-if="bill.fiscalPrintedAt" :value="t('fiscal.printedTag')" severity="info" class="big-tag"
           v-tooltip.bottom="fmtDateTime(bill.fiscalPrintedAt)" />
-        <Button :label="t('payments.printReceipt')" icon="pi pi-file" size="small" outlined
-          @click="openReceiptPrint" />
-        <Button v-if="bill.agreement" :label="t('payments.printAgreement')" icon="pi pi-file-edit" size="small" outlined
-          @click="openAgreementPrint" />
-        <Button :label="t('fiscal.printReceipt')" icon="pi pi-print" size="small"
-          :loading="fiscalBusy" @click="printFiscal" />
+        <Button size="small" class="print-btn" :disabled="fiscalBusy" @click="togglePrintMenu">
+          <i class="pi" :class="fiscalBusy ? 'pi-spin pi-spinner' : 'pi-print'" />
+          <span>{{ t('payments.printMenu') }}</span>
+          <i class="pi pi-chevron-down chev" />
+        </Button>
+        <Menu ref="printMenu" :model="printMenuItems" :popup="true" />
         <Button v-if="!bill.stornoed" size="small" outlined
           :severity="bill.paid ? 'warn' : 'success'"
           :icon="bill.paid ? 'pi pi-times-circle' : 'pi pi-check-circle'"
@@ -274,7 +286,7 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
     <template v-else-if="bill">
       <!-- Header / parties -->
       <section class="card">
-        <h2>{{ t('payments.detailTitle') }}</h2>
+        <h2>{{ t('payments.mainSection') }}</h2>
         <div class="grid">
           <div class="field span2">
             <label>{{ t('payments.owner') }}</label>
@@ -504,6 +516,9 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
 .field .val { font-size: .9rem; word-break: break-word; }
 .plate { display: inline-block; font-family: monospace; font-weight: 600; padding-right: .5rem; }
 .item-name { font-weight: 500; }
+
+.print-btn { display: inline-flex; align-items: center; gap: .4rem; }
+.print-btn .chev { font-size: .65rem; opacity: .8; }
 
 .storno-warn { margin: 0 0 .75rem; font-size: .9rem; }
 .storno-label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; color: var(--color-text-muted); margin-bottom: .25rem; }

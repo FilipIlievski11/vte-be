@@ -211,8 +211,9 @@ function groupOffset(kind: 'client' | 'vehicle'): number {
 .gs-row i { font-size: .75rem; color: var(--color-text-muted, #9ca3af); align-self: center; }
 .gs-row.active { background: var(--p-surface-100, #f3f4f6); }
 html.app-dark .gs-row.active { background: var(--p-surface-800, #27272a); }
-.gs-primary { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gs-secondary { color: var(--color-text-muted, #6b7280); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+/* Името (primary) има приоритет — секундарното се сече прво. */
+.gs-primary { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 45%; }
+.gs-secondary { color: var(--color-text-muted, #6b7280); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; flex: 0 1 auto; max-width: 50%; }
 .gs-note { padding: .6rem .5rem; font-size: .82rem; color: var(--color-text-muted, #6b7280); }
 .gs-hint { padding: .4rem .5rem .2rem; font-size: .68rem; color: var(--color-text-muted, #9ca3af); border-top: 1px solid var(--surface-border, #f1f5f9); margin-top: .25rem; }
 

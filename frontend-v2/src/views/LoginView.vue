@@ -15,7 +15,10 @@ const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 
-const userName = ref('admin');
+// Секој оператор има своја сметка — полето го памети последниот најавен
+// корисник на овој компјутер наместо да пред-пополнува „admin".
+const LAST_USER_KEY = 'vte.v2.lastUser';
+const userName = ref(localStorage.getItem(LAST_USER_KEY) ?? '');
 const password = ref('');
 const useCookie = ref(false);
 const loading = ref(false);
@@ -30,6 +33,7 @@ async function submit() {
       password: password.value,
       useCookie: useCookie.value,
     });
+    localStorage.setItem(LAST_USER_KEY, userName.value.trim());
     auth.setSession(data);
     const redirect = (route.query.redirect as string) || '/dashboard';
     router.push(redirect);

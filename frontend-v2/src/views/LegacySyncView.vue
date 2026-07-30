@@ -189,7 +189,7 @@ const resultRows = () => result.value ? [
 
 <style scoped>
 .legacy-sync { max-width: 820px; margin: 0 auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
-.page-head h1 { margin: 0; font-size: 1.5rem; }
+.page-head h1 { margin: 0; font-size: 1.3rem; }
 .page-head .sub { margin: .25rem 0 0; color: var(--text-muted, #6b7280); }
 .card { background: var(--surface-card, #fff); border: 1px solid var(--surface-border, #e5e7eb); border-radius: 10px; padding: 1.1rem 1.25rem; }
 .card h2 { margin: 0 0 .85rem; font-size: 1.05rem; }

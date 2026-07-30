@@ -18,6 +18,7 @@ import Select from 'primevue/select';
 import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
 import { useConfirm } from 'primevue/useconfirm';
 
 const { t } = useI18n();
@@ -155,7 +156,10 @@ function remove(row: RequestType) {
     :rows="50"
     :rowsPerPageOptions="[25,50,100]"
     dataKey="id">
-    <template #empty><div class="muted" style="padding:1rem">{{ t('empty.noRows') }}</div></template>
+    <template #empty>
+        <PagedTableEmpty icon="pi-file-edit" :title="t('empty.noRows')" :hint="t('empty.noRowsHint')"
+          :ctaLabel="t('requestTypes.new')" @cta="openNew" />
+      </template>
     <Column field="id" :header="t('ref.fields.id')" style="width:70px" />
     <Column field="name" :header="t('requestTypes.col.name')" />
     <Column :header="t('requestTypes.col.print')" style="width:220px">

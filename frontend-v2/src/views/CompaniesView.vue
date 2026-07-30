@@ -11,6 +11,7 @@ import Checkbox from 'primevue/checkbox';
 import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import PagedTableEmpty from '@/components/PagedTableEmpty.vue';
 import { useConfirm } from 'primevue/useconfirm';
 
 const { t } = useI18n();
@@ -72,7 +73,10 @@ function remove(c: Company) {
   </div>
 
   <DataTable :value="rows" :loading="loading" size="small" stripedRows dataKey="id">
-    <template #empty><div class="muted" style="padding:1rem">{{ t('empty.noRows') }}</div></template>
+    <template #empty>
+      <PagedTableEmpty icon="pi-building" :title="t('empty.noRows')" :hint="t('empty.noRowsHint')"
+        :ctaLabel="t('companies.new')" @cta="openNew" />
+    </template>
     <Column field="id" :header="t('ref.fields.id')" style="width:80px" />
     <Column field="name" :header="t('ref.fields.name')" />
     <Column field="createdAt" :header="t('companies.created')" style="width:180px">
