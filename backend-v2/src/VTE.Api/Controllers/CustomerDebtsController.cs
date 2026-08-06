@@ -225,7 +225,9 @@ public class CustomerDebtsController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == dto.PriceCatalogId);
         if (pc == null) return BadRequest(new { error = "Ставката од ценовникот не постои." });
 
-        var price = dto.Price ?? pc.BasePrice;
+        // Default from the catalog comes pre-rounded to whole denars (легаси фискално
+        // правило) — an explicitly typed operator price is kept as entered.
+        var price = dto.Price ?? VTE.Infrastructure.Pricing.MoneyRounding.FicalRound(pc.BasePrice);
         if (price < 0) return BadRequest(new { error = "Цената не може да биде негативна." });
 
         var vatPercent = await _db.VatRates.AsNoTracking()

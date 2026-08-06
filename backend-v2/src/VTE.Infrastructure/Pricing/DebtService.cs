@@ -66,7 +66,9 @@ public class DebtService : IDebtService
                 CompanyId = companyId,
                 CustomerVehicleRelationId = customerVehicleRelationId,
                 PriceCatalogId = m.PriceCatalogId,
-                Price = m.Price,
+                // Whole denars from day one (легаси фискално правило: ≤.49 ↓, ≥.50 ↑) —
+                // operators were rounding 842.52 → 843 by hand before billing.
+                Price = MoneyRounding.FicalRound(m.Price),
                 VatPercent = m.VatPercent,
                 Note = note,
                 Origin = origin,
