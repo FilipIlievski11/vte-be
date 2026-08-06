@@ -374,6 +374,10 @@ Header actions:
 - **Фискална сметка** (*Fiscal receipt*) — print/reprint the fiscal receipt. A
   **Фискализирана** (*Fiscalized*) tag with timestamp shows once it has been printed.
 - **Означи платено / неплатено** — toggle the paid status.
+- **Фискална — преглед** (admin only, in the Печати menu) — decodes the exact command
+  file the fiscal printer would receive and shows it as a paper-strip mock (items,
+  VAT classes, total), or the skip reason when the bill doesn't fiscalize. Nothing
+  prints; pure diagnostics.
 - **Сторнирај** (*Storno*) — reverse a wrong bill. A dialog asks for the mandatory
   **Причина за сторнирање** (reason). On confirm: the bill flips to **Сторно**, the debts
   it settled **return to the Наплата panel** (so you can bill the client again correctly),

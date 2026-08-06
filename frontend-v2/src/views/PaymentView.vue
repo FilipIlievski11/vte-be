@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { useAuthStore } from '@/stores/auth';
 import type { PaymentDetail } from '@/types';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
@@ -19,6 +20,7 @@ const props = defineProps<{ id: string }>();
 const { t } = useI18n();
 const router = useRouter();
 const toast = useToast();
+const auth = useAuthStore();
 
 const bill = ref<PaymentDetail | null>(null);
 const loading = ref(true);
@@ -97,8 +99,62 @@ const printMenuItems = computed(() => [
   ...(bill.value?.agreement
     ? [{ label: t('payments.printAgreement'), icon: 'pi pi-file-edit', command: () => openAgreementPrint() }]
     : []),
+  ...(auth.isAdmin
+    ? [{ separator: true }, { label: t('payments.fiscalPreview.menuLabel'), icon: 'pi pi-eye', command: () => openFiscalPreview() }]
+    : []),
 ]);
 function togglePrintMenu(e: Event) { printMenu.value?.toggle(e); }
+
+// ---- Преглед на фискалната (само admin): го декодира ВИСТИНСКИОТ команден фајл
+// што би отишол до Accent PF-500 и го црта како хартиена лента. Ако сметката не се
+// фискализира, ја покажува причината — дијагностика без принтер. Ништо не се печати.
+interface FiscalPreviewItem { name: string; vat: string; price: string }
+const fiscalPreviewVisible = ref(false);
+const fiscalPreviewBusy = ref(false);
+const fiscalPreviewSkip = ref<string | null>(null);
+const fiscalPreviewStorno = ref(false);
+const fiscalPreviewItems = ref<FiscalPreviewItem[]>([]);
+const fiscalPreviewRaw = ref('');
+const fiscalPreviewTotal = computed(() =>
+  fiscalPreviewItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0), 0));
+
+async function openFiscalPreview() {
+  fiscalPreviewBusy.value = true;
+  fiscalPreviewSkip.value = null;
+  fiscalPreviewItems.value = [];
+  fiscalPreviewRaw.value = '';
+  fiscalPreviewVisible.value = true;
+  try {
+    const { data } = await api.get<{ printsFiscal: boolean; skipReason: string | null; contentBase64: string }>(
+      `/payment-documents/${props.id}/fiscal-file`);
+    if (!data.printsFiscal) {
+      fiscalPreviewSkip.value = data.skipReason || t('payments.fiscalPreview.unknownSkip');
+      return;
+    }
+    const bin = atob(data.contentBase64);           // 1 знак = 1 бајт од фајлот
+    fiscalPreviewRaw.value = bin;
+    fiscalPreviewStorno.value = bin.startsWith(' U1');
+    const items: FiscalPreviewItem[] = [];
+    for (const ln of bin.split('\r\n')) {
+      // Ставка: `'1` или ` 1` префикс, име до TAB, па ДДВ-бајт (192/193/194) и цена.
+      if ((ln.startsWith("'1") || ln.startsWith(' 1')) && ln.includes('\t')) {
+        const tab = ln.indexOf('\t');
+        const rest = ln.slice(tab + 1);
+        const vatCode = rest.charCodeAt(0);
+        items.push({
+          name: ln.slice(2, tab),
+          vat: vatCode === 192 ? 'А' : vatCode === 193 ? 'Б' : vatCode === 194 ? 'В' : '?',
+          price: rest.slice(1),
+        });
+      }
+    }
+    fiscalPreviewItems.value = items;
+  } catch (e: any) {
+    fiscalPreviewSkip.value = e?.response?.data?.error ?? e?.message ?? 'Грешка';
+  } finally {
+    fiscalPreviewBusy.value = false;
+  }
+}
 
 // Повторна фискална за ВЕЌЕ платена рата (легаси имаше копче на секоја рата) —
 // на пр. кога печатењето на капарата не поминало првиот пат.
@@ -264,6 +320,37 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
         <Tag :value="statusTag.label" :severity="statusTag.severity" class="big-tag" />
       </div>
     </div>
+
+    <Dialog v-model:visible="fiscalPreviewVisible" modal :header="t('payments.fiscalPreview.title')"
+            :style="{ width: '26rem' }">
+      <div v-if="fiscalPreviewBusy" class="muted pad">{{ t('common.loading') }}…</div>
+      <div v-else-if="fiscalPreviewSkip" class="fp-skip">
+        <i class="pi pi-info-circle" /> {{ fiscalPreviewSkip }}
+      </div>
+      <template v-else>
+        <div class="fp-paper">
+          <div class="fp-device">~ ~ ~ {{ t('payments.fiscalPreview.deviceHeader') }} ~ ~ ~</div>
+          <div v-if="fiscalPreviewStorno" class="fp-storno">*** СТОРНА СМЕТКА ***</div>
+          <div class="fp-sep"></div>
+          <div v-for="(it, i) in fiscalPreviewItems" :key="i" class="fp-item">
+            <span class="fp-name">{{ it.name }}</span>
+            <span class="fp-price">{{ it.price }} {{ it.vat }}</span>
+          </div>
+          <div class="fp-sep"></div>
+          <div class="fp-total">
+            <span>{{ t('payments.fiscalPreview.total') }}</span>
+            <span>{{ fiscalPreviewTotal.toFixed(2) }}</span>
+          </div>
+          <div class="fp-legend">А=18% · Б=5% · В=0% ДДВ</div>
+          <div class="fp-device">~ ~ ~ {{ t('payments.fiscalPreview.deviceFooter') }} ~ ~ ~</div>
+        </div>
+        <details class="fp-raw">
+          <summary>{{ t('payments.fiscalPreview.rawToggle') }}</summary>
+          <pre>{{ fiscalPreviewRaw }}</pre>
+        </details>
+        <p class="muted small fp-hint">{{ t('payments.fiscalPreview.hint') }}</p>
+      </template>
+    </Dialog>
 
     <Dialog v-model:visible="stornoDialog" modal :header="t('payments.stornoDialog.title')"
             :style="{ width: '30rem' }">
@@ -519,6 +606,27 @@ const hasAnyLineDiscount = computed(() => bill.value?.lines.some(l => l.discount
 
 .print-btn { display: inline-flex; align-items: center; gap: .4rem; }
 .print-btn .chev { font-size: .65rem; opacity: .8; }
+
+/* Преглед на фискална — хартиена лента (намерно бела и во темна тема). */
+.fp-paper {
+  width: 17rem; margin: 0 auto;
+  background: #fff; color: #111;
+  font-family: 'Courier New', monospace; font-size: .78rem; line-height: 1.35;
+  padding: .8rem .9rem; border: 1px solid #d1d5db; border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.fp-device { text-align: center; color: #777; font-size: .68rem; margin: .15rem 0; }
+.fp-storno { text-align: center; font-weight: 700; margin: .3rem 0; }
+.fp-sep { border-top: 1px dashed #999; margin: .4rem 0; }
+.fp-item { display: flex; justify-content: space-between; gap: .6rem; }
+.fp-item .fp-name { word-break: break-all; }
+.fp-item .fp-price { white-space: nowrap; }
+.fp-total { display: flex; justify-content: space-between; font-weight: 700; font-size: .88rem; margin-top: .2rem; }
+.fp-legend { color: #777; font-size: .66rem; text-align: center; margin-top: .35rem; }
+.fp-skip { display: flex; gap: .5rem; align-items: baseline; padding: .5rem .25rem; font-size: .9rem; }
+.fp-raw { margin-top: .7rem; font-size: .78rem; }
+.fp-raw pre { background: var(--p-content-background); padding: .5rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+.fp-hint { margin: .6rem 0 0; }
 
 .storno-warn { margin: 0 0 .75rem; font-size: .9rem; }
 .storno-label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; color: var(--color-text-muted); margin-bottom: .25rem; }
