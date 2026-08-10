@@ -163,6 +163,35 @@ onMounted(() => {
 });
 onBeforeUnmount(() => clearInterval(opsTimer));
 
+// ---- Enter = Tab низ формите (легаси навика на операторите) ----
+// Enter во обичен input го носи фокусот на следното поле наместо да „потоне".
+// НЕ се меша кога: е отворено PrimeVue мени/календар (таму Enter избира), во
+// textarea (нов ред), кај копчиња, во глобалниот пребарувач (свој Enter), и на
+// login (надвор од овој layout). Во дијалог се движи само во рамки на дијалогот.
+function enterAsTab(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey) return;
+  const el = e.target as HTMLElement | null;
+  if (!el || el.tagName !== 'INPUT') return;
+  const inp = el as HTMLInputElement;
+  if (['button', 'submit', 'hidden', 'file'].includes(inp.type)) return;
+  if (el.closest('.gsearch')) return;
+  if (document.querySelector('.p-select-overlay, .p-autocomplete-overlay, .p-datepicker-panel, .p-menu')) return;
+  const scope = (el.closest('.p-dialog') as HTMLElement | null)
+    ?? (document.querySelector('.app-content') as HTMLElement | null)
+    ?? document.body;
+  const focusables = [...scope.querySelectorAll<HTMLElement>(
+    'input:not([type=hidden]):not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+  )].filter(f => f.offsetParent !== null);
+  const idx = focusables.indexOf(el);
+  if (idx < 0 || idx + 1 >= focusables.length) return;
+  e.preventDefault();
+  const next = focusables[idx + 1];
+  next.focus();
+  if (next instanceof HTMLInputElement && ['text', 'number', 'search', 'tel', 'email'].includes(next.type)) next.select();
+}
+onMounted(() => document.addEventListener('keydown', enterAsTab));
+onBeforeUnmount(() => document.removeEventListener('keydown', enterAsTab));
+
 // Верзија на билдот (git hash од /version.txt, пишува build-release.ps1) — во
 // футерот на sidebar-от, за да се гледа која верзија вози без надворешен линк.
 // Локално (Vite) фајлот не постои → останува празно.
