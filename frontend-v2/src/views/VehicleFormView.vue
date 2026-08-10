@@ -97,6 +97,23 @@ const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, la
 const bodyTypeOptions = computed(() => bodyTypes.value.map(b => ({ id: b.id, label: codeName(b) })));
 const colorOptions    = computed(() => colors.value.map(c => ({ id: c.id, label: codeName(c) })));
 
+// ---- „Дигитална сообраќајна" — скриена по default, toggle со копче (се памети
+// по компјутер преку localStorage) ----
+const LIC_PREVIEW_KEY = 'vte.v2.vehLicPreview';
+const showLicPreview = ref(localStorage.getItem(LIC_PREVIEW_KEY) === '1');
+function toggleLicPreview() {
+  showLicPreview.value = !showLicPreview.value;
+  localStorage.setItem(LIC_PREVIEW_KEY, showLicPreview.value ? '1' : '0');
+}
+
+// Марка → автоматски ја пополнува Државата на производство (маркерот носи countryId).
+// Само при РАЧЕН избор на марка — вчитувањето на постоечко возило не ја прегазува
+// зачуваната држава.
+function onMakerPicked() {
+  const c = makers.value.find(m => m.id === selectedMakerId.value)?.countryId;
+  if (c != null) form.value.madeCountryId = c;
+}
+
 // ---- „Дигитална сообраќајна" — жив преглед на клучните полиња со нивните кодови ----
 const licMakerModel = computed(() => {
   const mk = makers.value.find(m => m.id === selectedMakerId.value)?.name ?? '';
@@ -372,13 +389,17 @@ function fmtDate(s: string | null | undefined) {
           <span v-else class="muted">{{ form.vin }}</span>
         </div>
       </div>
+      <Button size="small" :outlined="!showLicPreview" icon="pi pi-id-card"
+              :label="t('vehicles.licPreview.button')"
+              v-tooltip.bottom="showLicPreview ? t('vehicles.licPreview.hide') : t('vehicles.licPreview.show')"
+              @click="toggleLicPreview" />
     </div>
 
     <div v-if="loading" class="empty"><i class="pi pi-spin pi-spinner" /> Loading…</div>
 
     <template v-else>
       <!-- ===== „Дигитална сообраќајна" — жив преглед со кодовите од дозволата ===== -->
-      <div class="lic-card">
+      <div v-if="showLicPreview" class="lic-card">
         <div class="lic-head">
           <span class="lic-flag">НМК</span>
           <span class="lic-title">{{ t('vehicles.licPreview.title') }}</span>
@@ -464,7 +485,8 @@ function fmtDate(s: string | null | undefined) {
           </div>
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.maker') }}</label>
-              <Select v-model="selectedMakerId" :options="makers" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <Select v-model="selectedMakerId" :options="makers" optionLabel="name" optionValue="id" placeholder="—" showClear filter
+                      @update:modelValue="onMakerPicked" />
             </div>
             <div class="field"><label>{{ t('vehicles.form.model') }}</label>
               <Select v-model="form.modelId" :options="filteredModels" optionLabel="name" optionValue="id" placeholder="—" showClear filter

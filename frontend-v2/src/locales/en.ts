@@ -646,6 +646,9 @@ export default {
     licPreview: {
       title: 'Traffic licence — preview',
       note: 'fills in live from the form',
+      button: 'Licence',
+      show: 'Show the traffic-licence style preview',
+      hide: 'Hide the preview',
     },
     form: {
       newTitle: 'New vehicle',
