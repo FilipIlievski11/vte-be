@@ -88,6 +88,27 @@ const filteredModels = computed(() =>
     : models.value
 );
 
+// „М1-Патничко возило" / „AC-KARAVAN" / „20-CRNA" — целосен код-име приказ како во
+// легаси и како што излегува на барањето; вградениот filter бара и по код и по име.
+function codeName(x: { code: string | null; name: string }): string {
+  return x.code && x.code.trim() ? `${x.code.trim()}-${x.name}` : x.name;
+}
+const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, label: codeName(c) })));
+const bodyTypeOptions = computed(() => bodyTypes.value.map(b => ({ id: b.id, label: codeName(b) })));
+const colorOptions    = computed(() => colors.value.map(c => ({ id: c.id, label: codeName(c) })));
+
+// ---- „Дигитална сообраќајна" — жив преглед на клучните полиња со нивните кодови ----
+const licMakerModel = computed(() => {
+  const mk = makers.value.find(m => m.id === selectedMakerId.value)?.name ?? '';
+  const md = models.value.find(m => m.id === form.value.modelId)?.name ?? '';
+  return [mk, md].filter(Boolean).join(' ');
+});
+const licCategory = computed(() => { const c = categories.value.find(x => x.id === form.value.categoryId); return c ? codeName(c) : '—'; });
+const licBody     = computed(() => { const b = bodyTypes.value.find(x => x.id === form.value.bodyTypeId); return b ? codeName(b) : '—'; });
+const licColor    = computed(() => { const c = colors.value.find(x => x.id === form.value.primaryColorId); return c ? codeName(c) : '—'; });
+const licCountry  = computed(() => countries.value.find(x => x.id === form.value.madeCountryId)?.name ?? '—');
+const licFuel     = computed(() => fuels.value.find(x => x.id === form.value.fuelId)?.name ?? '—');
+
 async function loadRefs() {
   const [bt, cat, mk, mdl, col, f, eco, et, pc, co] = await Promise.all([
     api.get<VehicleBodyType[]>('/vehicles/ref/body-types'),
@@ -356,6 +377,35 @@ function fmtDate(s: string | null | undefined) {
     <div v-if="loading" class="empty"><i class="pi pi-spin pi-spinner" /> Loading…</div>
 
     <template v-else>
+      <!-- ===== „Дигитална сообраќајна" — жив преглед со кодовите од дозволата ===== -->
+      <div class="lic-card">
+        <div class="lic-head">
+          <span class="lic-flag">НМК</span>
+          <span class="lic-title">{{ t('vehicles.licPreview.title') }}</span>
+          <span class="lic-note">{{ t('vehicles.licPreview.note') }}</span>
+        </div>
+        <div class="lic-body">
+          <div class="lic-plate" :class="{ empty: !form.plate }">
+            <span class="lic-plate-band">MK</span>
+            <span class="lic-plate-no">{{ form.plate || '· · · · ·' }}</span>
+          </div>
+          <div class="lic-grid">
+            <div class="lic-item wide"><span class="lc">E</span><span class="lv mono">{{ form.vin || '—' }}</span></div>
+            <div class="lic-item wide"><span class="lc">D.1/D.3</span><span class="lv strong">{{ licMakerModel || '—' }}</span></div>
+            <div class="lic-item"><span class="lc">J</span><span class="lv">{{ licCategory }}</span></div>
+            <div class="lic-item"><span class="lc">Карос.</span><span class="lv">{{ licBody }}</span></div>
+            <div class="lic-item"><span class="lc">R</span><span class="lv">{{ licColor }}</span></div>
+            <div class="lic-item"><span class="lc">D4.2</span><span class="lv">{{ licCountry }}</span></div>
+            <div class="lic-item"><span class="lc">5A</span><span class="lv">{{ manufactureYear ?? '—' }}</span></div>
+            <div class="lic-item"><span class="lc">P.1</span><span class="lv">{{ form.engineWorkingCapacityCc ?? '—' }} cm³</span></div>
+            <div class="lic-item"><span class="lc">P.2</span><span class="lv">{{ form.enginePowerKw ?? '—' }} kW</span></div>
+            <div class="lic-item"><span class="lc">P.3</span><span class="lv">{{ licFuel }}</span></div>
+            <div class="lic-item"><span class="lc">F.1</span><span class="lv">{{ form.maxAllowedWeightKg ?? '—' }} kg</span></div>
+            <div class="lic-item"><span class="lc">S.1</span><span class="lv">{{ form.seats ?? '—' }}</span></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== Company (admin-only) ===== -->
       <div v-if="auth.isAdmin" class="card">
         <div class="card-header">{{ t('vehicles.sections.company') }}</div>
@@ -403,10 +453,10 @@ function fmtDate(s: string | null | undefined) {
         <div class="card-body">
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.category') }}</label>
-              <Select v-model="form.categoryId" :options="categories" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <Select v-model="form.categoryId" :options="categoryOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
             </div>
             <div class="field"><label>{{ t('vehicles.form.bodyType') }}</label>
-              <Select v-model="form.bodyTypeId" :options="bodyTypes" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <Select v-model="form.bodyTypeId" :options="bodyTypeOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
             </div>
             <div class="field"><label>{{ t('vehicles.form.paymentCategory') }}</label>
               <Select v-model="form.paymentCategoryId" :options="paymentCats" optionLabel="name" optionValue="id" placeholder="—" showClear />
@@ -429,10 +479,10 @@ function fmtDate(s: string | null | undefined) {
           </div>
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.primaryColor') }}</label>
-              <Select v-model="form.primaryColorId" :options="colors" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <Select v-model="form.primaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
             </div>
             <div class="field"><label>{{ t('vehicles.form.secondaryColor') }}</label>
-              <Select v-model="form.secondaryColorId" :options="colors" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <Select v-model="form.secondaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
             </div>
           </div>
         </div>
@@ -719,6 +769,58 @@ function fmtDate(s: string | null | undefined) {
 
 <style scoped>
 /* Same v1-style cards as ClientFormView. */
+
+/* „Дигитална сообраќајна" — документ-стил картичка (фиксни бои во двете теми). */
+.lic-card {
+  border-radius: 12px; overflow: hidden; margin-bottom: .65rem;
+  border: 1px solid #b6c8d8;
+  background:
+    repeating-linear-gradient(-45deg, rgba(255,255,255,.35) 0 2px, transparent 2px 9px),
+    linear-gradient(135deg, #eaf3f7 0%, #dcebe7 55%, #e7f0dc 100%);
+  color: #10344c;
+  box-shadow: 0 1px 4px rgba(16, 52, 76, .12);
+}
+.lic-head {
+  display: flex; align-items: baseline; gap: .6rem;
+  padding: .4rem .8rem; border-bottom: 1px solid rgba(16,52,76,.18);
+  background: rgba(255,255,255,.35);
+}
+.lic-flag {
+  font-size: .62rem; font-weight: 800; letter-spacing: .06em;
+  background: #1c4e78; color: #ffd200; border-radius: 3px; padding: .1rem .35rem;
+}
+.lic-title { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.lic-note { margin-left: auto; font-size: .62rem; opacity: .65; }
+.lic-body { display: flex; gap: 1rem; align-items: flex-start; padding: .6rem .8rem .7rem; flex-wrap: wrap; }
+.lic-plate {
+  display: inline-flex; align-items: stretch; border: 2px solid #10344c; border-radius: 6px;
+  overflow: hidden; background: #fff; flex: 0 0 auto; align-self: center;
+}
+.lic-plate-band {
+  background: #1c4e78; color: #fff; font-size: .6rem; font-weight: 700;
+  display: flex; align-items: flex-end; padding: .2rem .25rem;
+}
+.lic-plate-no {
+  font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 800; font-size: 1.45rem;
+  letter-spacing: .1em; padding: .15rem .6rem; color: #10344c; white-space: nowrap;
+}
+.lic-plate.empty .lic-plate-no { color: #9db3c4; }
+.lic-grid {
+  flex: 1; min-width: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: .25rem .9rem;
+}
+.lic-item { display: flex; align-items: baseline; gap: .4rem; min-width: 0; }
+.lic-item.wide { grid-column: span 2; }
+.lc {
+  flex: 0 0 auto; font-size: .6rem; font-weight: 800; color: #1c4e78;
+  border: 1px solid rgba(28,78,120,.45); border-radius: 3px; padding: 0 .25rem;
+  background: rgba(255,255,255,.55); letter-spacing: .03em;
+}
+.lv { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv.strong { font-weight: 700; }
+.lv.mono { font-family: monospace; letter-spacing: .04em; }
+@media (max-width: 760px) { .lic-item.wide { grid-column: span 1; } }
 
 /* Owner management */
 .owners-header { display: flex; align-items: center; justify-content: space-between; }
