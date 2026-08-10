@@ -68,6 +68,18 @@ DELETE FROM dbo.ClientVehicleRelation WHERE ClientId IN (SELECT Id FROM @testCli
 DELETE FROM dbo.Client WHERE Id IN (SELECT Id FROM @testClients);
 PRINT CONCAT('Test klienti: ', @@ROWCOUNT);
 
+-- 6. Релации-сирачиња >= 10M: не се врзани за НИШТО (остатоци од избришани
+--    барања/тестови). Vertest релациите се исклучени преку проверките (полномошно/
+--    МВД/долг/сметка/барање врзани → не се фаќаат).
+DELETE r FROM dbo.ClientVehicleRelation r
+WHERE r.Id >= 10000000
+  AND NOT EXISTS (SELECT 1 FROM dbo.VehiclePermission vp WHERE vp.ClientVehicleRelationId = r.Id)
+  AND NOT EXISTS (SELECT 1 FROM dbo.InternationalDrivingLicence i WHERE i.ClientId = r.ClientId)
+  AND NOT EXISTS (SELECT 1 FROM dbo.CustomerDebt d WHERE d.CustomerVehicleRelationId = r.Id)
+  AND NOT EXISTS (SELECT 1 FROM dbo.PaymentDocument p WHERE p.CustomerVehicleRelationId = r.Id)
+  AND NOT EXISTS (SELECT 1 FROM dbo.Request q WHERE q.ClientVehicleRelationId = r.Id OR q.NewClientVehicleRelationId = r.Id);
+PRINT CONCAT('Sirak relacii: ', @@ROWCOUNT);
+
 COMMIT TRANSACTION;
 
 -- Контрола: што остана v2-native (МВД/полномошна и vertest огледалото ТРЕБА да стојат).
