@@ -24,12 +24,15 @@ public class TechnicalExamReportsController : ControllerBase
     private readonly VteDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IDebtService _debts;
+    private readonly ILogger<TechnicalExamReportsController> _logger;
 
-    public TechnicalExamReportsController(VteDbContext db, ITenantContext tenant, IDebtService debts)
+    public TechnicalExamReportsController(VteDbContext db, ITenantContext tenant, IDebtService debts,
+        ILogger<TechnicalExamReportsController> logger)
     {
         _db = db;
         _tenant = tenant;
         _debts = debts;
+        _logger = logger;
     }
 
     // ---- DTOs ----
@@ -729,6 +732,13 @@ public class TechnicalExamReportsController : ControllerBase
             try
             {
                 var isIrregular = report.TechnicalExamTypeId > 1;   // legacy convention: type=1 is regular
+                // Легаси delitel: не-РЕД-12М типовите ја скалираат ставката
+                // „Технички преглед" со PercentOfFullExam (0% = без долгови).
+                int? scalePercent = isIrregular
+                    ? await _db.TechnicalExamTypes.AsNoTracking()
+                        .Where(t => t.Id == report.TechnicalExamTypeId)
+                        .Select(t => (int?)t.PercentOfFullExam).FirstOrDefaultAsync()
+                    : null;
                 await _debts.CreateDebtsForSourceAsync(
                     origin:                     isIrregular ? DebtOrigin.TechnicalExamIrregular : DebtOrigin.TechnicalExam,
                     originId:                   report.Id,
@@ -736,12 +746,14 @@ public class TechnicalExamReportsController : ControllerBase
                     organizationId:             report.OrganizationId,
                     trigger:                    isIrregular ? PriceTrigger.TechnicalExamIrregular : PriceTrigger.TechnicalExam,
                     communityId:                null,
-                    note:                       $"технички преглед бр. {report.RegNumber}");
+                    note:                       $"технички преглед бр. {report.RegNumber}",
+                    techExamScalePercent:       scalePercent);
             }
-            catch
+            catch (Exception ex)
             {
                 // Debt creation is best-effort — failure here should not roll back the exam.
-                // Phase 5 will move this to a transactional outbox for proper retry semantics.
+                // But NEVER silently: a swallowed error means missing charges (2026-08-11).
+                _logger.LogError(ex, "Debt creation failed for tech exam {ExamId}", report.Id);
             }
         }
 

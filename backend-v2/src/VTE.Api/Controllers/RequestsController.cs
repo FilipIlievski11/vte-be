@@ -513,6 +513,13 @@ public class RequestsController : ControllerBase
         // Exam-fee debt — identical to TechnicalExamReportsController.Create:711-723
         // (the v2 equivalent of legacy insertFinancialStatePriceCatalogForTehnicalExams).
         var isIrregular = typeId > 1;                                      // legacy: type 1 is the regular РЕД-12М
+        // Легаси delitel: не-РЕД-12М типовите ја скалираат ставката „Технички
+        // преглед" со PercentOfFullExam (0% = без долгови, пр. АТЕСТ).
+        int? scalePercent = isIrregular
+            ? await _db.TechnicalExamTypes.AsNoTracking()
+                .Where(t => t.Id == typeId)
+                .Select(t => (int?)t.PercentOfFullExam).FirstOrDefaultAsync()
+            : null;
         await _debts.CreateDebtsForSourceAsync(
             origin:                     isIrregular ? DebtOrigin.TechnicalExamIrregular : DebtOrigin.TechnicalExam,
             originId:                   exam.Id,
@@ -520,7 +527,8 @@ public class RequestsController : ControllerBase
             organizationId:             orgId,
             trigger:                    isIrregular ? PriceTrigger.TechnicalExamIrregular : PriceTrigger.TechnicalExam,
             communityId:                null,
-            note:                       $"технички преглед бр. {regNumber}");
+            note:                       $"технички преглед бр. {regNumber}",
+            techExamScalePercent:       scalePercent);
     }
 
     [HttpPut("{id:long}")]
