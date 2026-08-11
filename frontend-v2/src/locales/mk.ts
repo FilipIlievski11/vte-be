@@ -1192,7 +1192,13 @@ export default {
       details: 'Детали на сметка',
       addItem: 'Додади',
       addItemPlaceholder: 'Услуга од ценовникот…',
+      addItemTitle: 'Додади услуга',
       itemAdded: 'Ставката е додадена',
+      srcExam: 'Технички преглед',
+      srcRequest: 'Барање',
+      srcManual: 'Рачно додадени услуги',
+      unpaidCount: 'нема неплатени ставки | 1 неплатена ставка | {n} неплатени ставки',
+      totalDue: 'Вкупно за наплата',
       derivation: {
         sovetTp: '1,5% од технички преглед',
         sovetPt: '1% од патна такса',

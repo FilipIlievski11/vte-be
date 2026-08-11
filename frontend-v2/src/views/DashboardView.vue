@@ -361,6 +361,47 @@ async function refreshDetail() {
 const detailUnpaidRows = computed(() => detailRows.value.filter(r => !r.paid));
 const detailUnpaidTotal = computed(() => detailUnpaidRows.value.reduce((s, r) => s + r.price, 0));
 
+// Ставките групирани по извор (преглед / барање / рачно) — секоја група со линк до
+// изворниот документ и меѓузбир на неплатеното. Редоследот го следи редот на внес.
+interface DetailSourceGroup {
+  key: string; icon: string; label: string; to: string | null;
+  rows: CustomerDebtRow[]; subtotal: number;
+}
+const detailSourceGroups = computed<DetailSourceGroup[]>(() => {
+  const map = new Map<string, DetailSourceGroup>();
+  for (const r of detailRows.value) {
+    let key: string; let icon: string; let label: string; let to: string | null = null;
+    if (r.originTechnicalExamId != null) {
+      key = `te-${r.originTechnicalExamId}`;
+      icon = 'pi pi-clipboard';
+      label = r.note?.trim() || t('dashboard.naplata.srcExam');
+      to = `/technical-exams/${r.originTechnicalExamId}`;
+    } else if (r.originRequestId != null) {
+      key = `rq-${r.originRequestId}`;
+      icon = 'pi pi-file-edit';
+      label = r.note?.trim() || t('dashboard.naplata.srcRequest');
+      to = `/requests/${r.originRequestId}`;
+    } else {
+      key = `mn-${r.note?.trim() || ''}`;
+      icon = 'pi pi-pencil';
+      label = r.note?.trim() || t('dashboard.naplata.srcManual');
+    }
+    let g = map.get(key);
+    if (!g) { g = { key, icon, label, to, rows: [], subtotal: 0 }; map.set(key, g); }
+    g.rows.push(r);
+    if (!r.paid) g.subtotal += r.price;
+  }
+  return [...map.values()];
+});
+
+// Континуирано нумерирање на редовите низ групите (изглед на фактура).
+const detailRowNo = computed<Record<number, number>>(() => {
+  const out: Record<number, number> = {};
+  let i = 1;
+  for (const g of detailSourceGroups.value) for (const r of g.rows) out[r.id] = i++;
+  return out;
+});
+
 async function addDetailItem() {
   if (!detailGroup.value || !pcSelected.value || typeof pcSelected.value === 'string') return;
   addSaving.value = true;
@@ -781,85 +822,108 @@ onMounted(async () => {
   <Dialog v-model:visible="detailVisible" :header="t('dashboard.naplata.details')"
           modal class="debt-detail-dialog" :style="{ width: '980px', maxWidth: '96vw' }">
     <div v-if="detailGroup" class="detail-head">
-      <b>{{ detailGroup.clientName || '—' }}</b>
-      <span v-if="detailGroup.clientMB" class="muted mono">· {{ detailGroup.clientMB }}</span>
-      <span v-if="detailGroup.vehiclePlate" class="plate">{{ detailGroup.vehiclePlate }}</span>
-      <span v-if="detailGroup.vehicleMakerModel" class="muted">· {{ detailGroup.vehicleMakerModel }}</span>
+      <div class="dh-id">
+        <div class="dh-name">{{ detailGroup.clientName || '—' }}</div>
+        <div v-if="detailGroup.clientMB" class="dh-mb mono">{{ detailGroup.clientMB }}</div>
+      </div>
+      <div v-if="detailGroup.vehiclePlate" class="dh-plate">
+        <span class="dh-plate-band">MK</span>
+        <span class="dh-plate-no">{{ detailGroup.vehiclePlate }}</span>
+      </div>
+      <div v-if="detailGroup.vehicleMakerModel" class="dh-veh">{{ detailGroup.vehicleMakerModel }}</div>
+      <span class="dh-spacer"></span>
+      <div class="dh-count muted">{{ t('dashboard.naplata.unpaidCount', detailUnpaidRows.length) }}</div>
     </div>
 
     <div class="detail-rows">
       <div class="detail-row detail-row-head">
+        <span class="col-no">#</span>
         <span class="col-service">{{ t('dashboard.naplata.col.service') }}</span>
-        <span class="col-note">{{ t('dashboard.naplata.col.note') }}</span>
         <span class="col-date">{{ t('dashboard.naplata.col.date') }}</span>
         <span class="col-price">{{ t('dashboard.naplata.col.price') }}</span>
         <span class="col-x"></span>
       </div>
-      <div v-for="r in detailRows" :key="r.id" class="detail-row" :class="{ 'row-paid': r.paid }">
-        <span class="col-service" :title="r.composedName ?? r.priceCatalogName ?? ''">
-          {{ r.composedName || r.priceCatalogName || '—' }}
-          <span v-if="derivationLabel(r)" class="deriv-chip">{{ derivationLabel(r) }}</span>
-        </span>
-        <span class="col-note muted" :title="r.note ?? ''">{{ r.note || '' }}</span>
-        <span class="col-date muted">{{ fmtDate(r.createdAt) }}</span>
-        <span class="col-price mono">
-          <span v-if="editDebtId === r.id" class="price-edit-wrap" @click.stop>
-            <InputNumber v-model="editDebtPrice" :minFractionDigits="2" :maxFractionDigits="2" :min="0"
-                         inputClass="price-edit-input" autofocus
-                         @keydown.enter="saveDebtPrice" @keydown.esc="cancelEditDebt" />
-            <Button icon="pi pi-check" size="small" text severity="success" :loading="savingDebtPrice" @click.stop="saveDebtPrice" />
-            <Button icon="pi pi-times" size="small" text severity="secondary" :disabled="savingDebtPrice" @click.stop="cancelEditDebt" />
+
+      <template v-for="g in detailSourceGroups" :key="g.key">
+        <div class="src-head">
+          <i :class="g.icon" />
+          <RouterLink v-if="g.to" :to="g.to" class="src-link">{{ g.label }}</RouterLink>
+          <span v-else class="src-label">{{ g.label }}</span>
+          <span class="src-line"></span>
+          <span v-if="g.subtotal > 0 && detailSourceGroups.length > 1" class="src-subtotal mono">
+            {{ fmtMoney(g.subtotal) }}
           </span>
-          <template v-else>
-            <span class="price-val" :class="{ editable: !r.paid }"
-                  :title="!r.paid ? t('payments.editPriceHint') : ''"
-                  @click.stop="beginEditDebt(r)">{{ fmtMoney(r.price) }}</span>
-            <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
-          </template>
-        </span>
-        <span class="col-x">
-          <button v-if="!r.paid" class="row-del" @click="deleteDetailRow(r)"
-                  v-tooltip.left="t('dashboard.naplata.delete')">
-            <i class="pi pi-trash" />
-          </button>
-        </span>
-      </div>
+        </div>
+        <div v-for="r in g.rows" :key="r.id" class="detail-row" :class="{ 'row-paid': r.paid }">
+          <span class="col-no muted">{{ detailRowNo[r.id] }}</span>
+          <span class="col-service" :title="r.composedName ?? r.priceCatalogName ?? ''">
+            {{ r.composedName || r.priceCatalogName || '—' }}
+            <span v-if="derivationLabel(r)" class="deriv-chip">{{ derivationLabel(r) }}</span>
+          </span>
+          <span class="col-date muted">{{ fmtDate(r.createdAt) }}</span>
+          <span class="col-price mono">
+            <span v-if="editDebtId === r.id" class="price-edit-wrap" @click.stop>
+              <InputNumber v-model="editDebtPrice" :minFractionDigits="2" :maxFractionDigits="2" :min="0"
+                           inputClass="price-edit-input" autofocus
+                           @keydown.enter="saveDebtPrice" @keydown.esc="cancelEditDebt" />
+              <Button icon="pi pi-check" size="small" text severity="success" :loading="savingDebtPrice" @click.stop="saveDebtPrice" />
+              <Button icon="pi pi-times" size="small" text severity="secondary" :disabled="savingDebtPrice" @click.stop="cancelEditDebt" />
+            </span>
+            <template v-else>
+              <span class="price-val" :class="{ editable: !r.paid }"
+                    :title="!r.paid ? t('payments.editPriceHint') : ''"
+                    @click.stop="beginEditDebt(r)">{{ fmtMoney(r.price) }}</span>
+              <Tag v-if="r.paid" :value="t('dashboard.naplata.paid')" severity="success" class="paid-tag" />
+            </template>
+          </span>
+          <span class="col-x">
+            <button v-if="!r.paid" class="row-del" @click="deleteDetailRow(r)"
+                    v-tooltip.left="t('dashboard.naplata.delete')">
+              <i class="pi pi-trash" />
+            </button>
+          </span>
+        </div>
+      </template>
+
       <div v-if="detailLoading" class="empty"><i class="pi pi-spin pi-spinner" /></div>
       <div v-else-if="!detailRows.length" class="empty"><span>{{ t('dashboard.naplata.empty') }}</span></div>
     </div>
 
     <div class="detail-add">
-      <AutoComplete
-        v-model="pcSelected"
-        :suggestions="pcOptions"
-        :optionLabel="(p: any) => pcLabel(p)"
-        :placeholder="t('dashboard.naplata.addItemPlaceholder')"
-        class="add-service"
-        @complete="searchPriceCatalog"
-        @option-select="onPcSelect"
-      >
-        <template #option="{ option }">
-          <div class="pc-opt">
-            <span class="pc-opt-name">{{ pcLabel(option) }}</span>
-            <span class="pc-opt-price mono">{{ fmtMoney(option.basePrice) }}</span>
-          </div>
-        </template>
-      </AutoComplete>
-      <InputNumber v-model="addPrice" :min="0" :maxFractionDigits="2"
-                   :placeholder="t('dashboard.naplata.col.price')" class="add-price" />
-      <InputText v-model="addNote" :placeholder="t('dashboard.naplata.col.note')" class="add-note" />
-      <Button icon="pi pi-plus" :label="t('dashboard.naplata.addItem')" size="small"
-              :disabled="!pcSelected || typeof pcSelected === 'string' || addSaving"
-              :loading="addSaving" @click="addDetailItem" />
+      <span class="da-title">{{ t('dashboard.naplata.addItemTitle') }}</span>
+      <div class="da-fields">
+        <AutoComplete
+          v-model="pcSelected"
+          :suggestions="pcOptions"
+          :optionLabel="(p: any) => pcLabel(p)"
+          :placeholder="t('dashboard.naplata.addItemPlaceholder')"
+          class="add-service"
+          @complete="searchPriceCatalog"
+          @option-select="onPcSelect"
+        >
+          <template #option="{ option }">
+            <div class="pc-opt">
+              <span class="pc-opt-name">{{ pcLabel(option) }}</span>
+              <span class="pc-opt-price mono">{{ fmtMoney(option.basePrice) }}</span>
+            </div>
+          </template>
+        </AutoComplete>
+        <InputNumber v-model="addPrice" :min="0" :maxFractionDigits="2"
+                     :placeholder="t('dashboard.naplata.col.price')" class="add-price" />
+        <InputText v-model="addNote" :placeholder="t('dashboard.naplata.col.note')" class="add-note" />
+        <Button icon="pi pi-plus" :label="t('dashboard.naplata.addItem')" size="small"
+                :disabled="!pcSelected || typeof pcSelected === 'string' || addSaving"
+                :loading="addSaving" @click="addDetailItem" />
+      </div>
     </div>
 
     <template #footer>
       <div class="detail-footer">
-        <span class="muted">{{ t('dashboard.naplata.total') }}</span>
-        <span class="mono detail-total"><b>{{ fmtMoney(detailUnpaidTotal) }}</b> <span class="muted">{{ t('dashboard.naplata.den') }}</span></span>
+        <span class="df-label">{{ t('dashboard.naplata.totalDue') }}</span>
+        <span class="df-total mono">{{ fmtMoney(detailUnpaidTotal) }}<small>&nbsp;{{ t('dashboard.naplata.den') }}</small></span>
         <span class="spacer"></span>
         <Button :label="t('dashboard.naplata.makeBill', { n: detailUnpaidRows.length })"
-                icon="pi pi-file" size="small"
+                icon="pi pi-file"
                 :disabled="detailUnpaidRows.length === 0"
                 @click="billDetailGroup" />
       </div>
@@ -1222,41 +1286,95 @@ onMounted(async () => {
 }
 .grp-detail-btn:hover { opacity: .8 }
 
+/* Identity band: клиент · ЕМБГ · таблица · возило · бр. неплатени */
 .detail-head {
-  display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap;
-  font-size: .9rem; margin-bottom: .6rem;
+  display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+  padding: .55rem .75rem; margin-bottom: .75rem;
+  background: var(--p-content-hover-background, rgba(0,0,0,.03));
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 8px;
 }
+.dh-id { display: flex; flex-direction: column; gap: 1px; min-width: 0 }
+.dh-name { font-weight: 700; font-size: .95rem; letter-spacing: .01em }
+.dh-mb { font-size: .72rem; color: var(--p-text-muted-color); letter-spacing: .05em }
+.dh-plate {
+  display: inline-flex; align-items: stretch; flex: 0 0 auto;
+  border: 1.5px solid #1e293b; border-radius: 4px; overflow: hidden;
+  background: #fff; line-height: 1;
+}
+.dh-plate-band {
+  background: #1d4ed8; color: #fff; font-size: .5rem; font-weight: 700;
+  display: flex; align-items: flex-end; padding: 2px 3px;
+}
+.dh-plate-no {
+  color: #111827; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-weight: 700; font-size: .82rem; letter-spacing: .1em; padding: 4px 7px 3px;
+}
+.dh-veh { font-size: .82rem; color: var(--p-text-muted-color); font-weight: 600 }
+.dh-spacer { flex: 1 }
+.dh-count { font-size: .75rem; white-space: nowrap }
+
+/* Ставки — фактурен изглед: нумерирани редови, групи по извор со меѓузбир */
 .detail-rows { font-size: .85rem; line-height: 1.35 }
 .detail-row {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(13.5rem, 1fr) 5.4rem 7rem 1.5rem;
+  grid-template-columns: 1.7rem minmax(0, 1fr) 5.4rem 8.2rem 1.7rem;
   gap: .6rem; align-items: center;
   padding: 4px .4rem;
 }
 .detail-row:hover:not(.detail-row-head) { background: var(--p-content-hover-background, rgba(0,0,0,.04)) }
 .detail-row-head {
-  font-weight: 600; font-size: .72rem; letter-spacing: .04em;
+  font-weight: 600; font-size: .68rem; letter-spacing: .06em;
   color: var(--p-text-muted-color);
   border-bottom: 1px solid var(--p-content-border-color);
   padding-bottom: 3px;
 }
-.detail-row:not(.detail-row-head) { border-bottom: 1px solid var(--p-content-border-color, rgba(0,0,0,.06)) }
-.detail-row .col-service { overflow-wrap: anywhere; white-space: normal; overflow: visible; text-overflow: clip }
-.detail-row .col-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.detail-row .col-price { text-align: right; white-space: nowrap }
-.detail-row .col-date { white-space: nowrap }
-.detail-row.row-paid { opacity: .55 }
-.row-del {
-  background: none; border: 0; cursor: pointer; padding: 0 2px;
-  color: var(--p-red-500, #ef4444); font-size: .72rem; line-height: 1;
+.detail-row:not(.detail-row-head) { border-bottom: 1px dashed var(--p-content-border-color, rgba(0,0,0,.06)) }
+.detail-row .col-no { text-align: right; font-size: .72rem; font-variant-numeric: tabular-nums }
+.detail-row .col-service { overflow-wrap: anywhere; white-space: normal }
+.detail-row .col-price {
+  text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums; font-weight: 600;
 }
+.detail-row .col-date { white-space: nowrap; font-size: .75rem }
+.detail-row.row-paid { opacity: .5 }
+.detail-row.row-paid .col-service { text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5) }
+.row-del {
+  background: none; border: 0; cursor: pointer; padding: 2px;
+  color: var(--p-red-500, #ef4444); font-size: .72rem; line-height: 1;
+  opacity: 0; transition: opacity .12s;
+}
+.detail-row:hover .row-del { opacity: 1 }
 .row-del:hover { opacity: .75 }
 
-.detail-add {
-  display: flex; gap: .4rem; align-items: center;
-  margin-top: .6rem; padding-top: .5rem;
-  border-top: 1px solid var(--p-content-border-color);
+/* Група по извор (преглед/барање/рачно) */
+.src-head {
+  display: flex; align-items: center; gap: .45rem;
+  margin-top: .55rem; padding: .2rem .4rem 3px;
+  font-size: .74rem; font-weight: 600;
 }
+.src-head > i { font-size: .7rem; color: var(--p-primary-color) }
+.src-link { color: var(--p-primary-color); text-decoration: none }
+.src-link::first-letter, .src-label::first-letter { text-transform: uppercase }
+.src-link:hover { text-decoration: underline }
+.src-label { color: var(--p-text-color) }
+.src-line { flex: 1; border-top: 1px solid var(--p-content-border-color); opacity: .7 }
+.src-subtotal {
+  font-size: .72rem; font-weight: 600; color: var(--p-text-muted-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Додавање услуга */
+.detail-add {
+  margin-top: .8rem; padding: .55rem .6rem .6rem;
+  border: 1px dashed var(--p-content-border-color);
+  border-radius: 8px;
+}
+.da-title {
+  display: block; font-size: .68rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--p-text-muted-color); margin-bottom: .35rem;
+}
+.da-fields { display: flex; gap: .4rem; align-items: center }
 .detail-add .add-service { flex: 1 1 auto; min-width: 0 }
 .detail-add .add-service :deep(input) { width: 100%; font-size: .78rem }
 .detail-add .add-price { width: 6.5rem }
@@ -1266,7 +1384,16 @@ onMounted(async () => {
 .pc-opt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .pc-opt-price { flex: 0 0 auto }
 
-.detail-footer { display: flex; align-items: baseline; gap: .5rem; width: 100%; font-size: .82rem }
+/* Footer: истакнат вкупен износ + CTA */
+.detail-footer {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  padding-top: .1rem;
+}
+.df-label { font-size: .78rem; color: var(--p-text-muted-color); font-weight: 600 }
+.df-total {
+  font-size: 1.25rem; font-weight: 700; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+}
+.df-total small { font-size: .72rem; font-weight: 500; color: var(--p-text-muted-color) }
 .detail-footer .spacer { flex: 1 }
-.detail-total { font-size: .9rem }
 </style>

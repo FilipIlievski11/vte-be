@@ -1192,7 +1192,13 @@ export default {
       details: 'Account details',
       addItem: 'Add',
       addItemPlaceholder: 'Service from the price catalog…',
+      addItemTitle: 'Add a service',
       itemAdded: 'Item added',
+      srcExam: 'Technical exam',
+      srcRequest: 'Request',
+      srcManual: 'Manually added services',
+      unpaidCount: 'no unpaid items | 1 unpaid item | {n} unpaid items',
+      totalDue: 'Total due',
       derivation: {
         sovetTp: '1.5% of the technical exam fee',
         sovetPt: '1% of the road tax',
