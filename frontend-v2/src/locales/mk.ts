@@ -530,6 +530,9 @@ export default {
         attachments: 'Прилози',
         audit: 'Историја',
       },
+      techExam: {
+        title: 'Технички преглед',
+      },
       type: 'Вид барање',
       pickType: 'Избери вид…',
       note: 'Забелешка',

@@ -13,7 +13,7 @@ import type {
   VehicleRelationDto,
   RequestOwnershipProofDto, RequestPaymentProofDto, RequestAttachmentDto,
   RequestOwnershipProofType, RequestPaymentProofType, RequestAttachmentType,
-  EndRequestResult,
+  EndRequestResult, TechExamReportFull,
 } from '@/types';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -99,6 +99,32 @@ const endedAt = ref<string | null>(null);
 const createdByName = ref<string | null>(null);
 const modifiedByName = ref<string | null>(null);
 const endedByName = ref<string | null>(null);
+
+// ---- Врзан технички преглед (авто-креиран од барањето или легаси) ----
+// Мора да се испраќа назад при PUT — инаку зачувувањето ја брише врската.
+const technicalExamReportId = ref<number | null>(null);
+const techExamReg = ref<string | null>(null);
+const techExamIsRight = ref<boolean | null>(null);
+
+async function loadTechExamInfo() {
+  techExamReg.value = null;
+  techExamIsRight.value = null;
+  if (!technicalExamReportId.value) return;
+  try {
+    const { data: ex } = await api.get<TechExamReportFull>(`/technical-exams/${technicalExamReportId.value}`);
+    techExamReg.value = ex.regNumber;
+    techExamIsRight.value = ex.vehicleIsRight;
+  } catch { /* линкот останува со #id */ }
+}
+
+function printTechZapisnik() {
+  if (!technicalExamReportId.value) return;
+  openPrintTab(router.resolve({ name: 'technical-exam-zapisnik', params: { id: technicalExamReportId.value } }).href);
+}
+function printTechCertificate() {
+  if (!technicalExamReportId.value || techExamIsRight.value === false) return;
+  openPrintTab(router.resolve({ name: 'technical-exam-print', params: { id: technicalExamReportId.value } }).href);
+}
 
 // ---- Anchor: legacy two-field linked pickers (vehicle ⇄ owner) ----
 // Both fields are always visible. Pick a vehicle → its owner auto-fills.
@@ -456,6 +482,8 @@ async function loadRequest() {
     createdByName.value = r.createdByUserName;
     modifiedByName.value = r.modifiedByUserName;
     endedByName.value = r.endedByUserName;
+    technicalExamReportId.value = r.technicalExamReportId;
+    void loadTechExamInfo();
 
     // Hydrate both fields: read the relation, then the client's sibling relations.
     selectedRelationId.value = r.clientVehicleRelationId;
@@ -659,7 +687,8 @@ async function save() {
     // newClientVehicleRelationId is kept only as a fallback for already-stored data.
     newOwnerClientId: requiresNewOwner.value ? newOwnerClientId.value : null,
     newClientVehicleRelationId: newOwnerClientId.value ? null : (newClientVehicleRelationId.value ?? null),
-    technicalExamReportId: null,
+    // Врзаниот тех. преглед се враќа како што е вчитан — null би ја избришал врската.
+    technicalExamReportId: technicalExamReportId.value,
     previousRegistrationId: null,
     note: note.value || null,
     active: active.value,
@@ -687,6 +716,13 @@ async function save() {
           detail: t('requests.form.docsPartial'), life: 5000 });
       }
       toast.add({ severity: 'success', summary: t('requests.form.created'), life: 1500 });
+      // RouterView нема :key — компонентата се реупотребува по replace, onMounted не
+      // се повикува пак. Хидрирај го најнужното од одговорот (вкл. авто-креираниот
+      // тех. преглед за линкот/печатите да се видат веднаш).
+      requestId.value = data.id;
+      createdAt.value = data.createdAt;
+      technicalExamReportId.value = data.technicalExamReportId;
+      void loadTechExamInfo();
       router.replace(`/requests/${data.id}`);
     }
   } catch (e: any) {
@@ -1020,6 +1056,27 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Врзан технички преглед (авто-креиран од барањето) -->
+    <div v-if="isEdit && technicalExamReportId" class="card">
+      <div class="card-header">{{ t('requests.form.techExam.title') }}</div>
+      <div class="card-body te-row">
+        <RouterLink :to="`/technical-exams/${technicalExamReportId}`" class="te-link">
+          <i class="pi pi-external-link" />
+          {{ techExamReg || ('#' + technicalExamReportId) }}
+        </RouterLink>
+        <Tag v-if="techExamIsRight != null"
+             :value="techExamIsRight ? t('techExam.pass') : t('techExam.fail')"
+             :severity="techExamIsRight ? 'success' : 'danger'" />
+        <span class="te-spacer"></span>
+        <Button :label="t('techExam.printZapisnik')" icon="pi pi-file" size="small"
+                severity="secondary" outlined @click="printTechZapisnik" />
+        <Button :label="t('techExam.printCertificate')" icon="pi pi-print" size="small"
+                severity="secondary" outlined :disabled="techExamIsRight === false"
+                v-tooltip.top="techExamIsRight === false ? t('techExam.printDisabledHint') : undefined"
+                @click="printTechCertificate" />
+      </div>
+    </div>
+
     <!-- Audit (edit-only) -->
     <div v-if="isEdit" class="card">
       <div class="card-header">{{ t('requests.form.sections.audit') }}</div>
@@ -1240,6 +1297,12 @@ onMounted(async () => {
 .audit-table { width: 100%; font-size: .85rem }
 .audit-table td { padding: .25rem .5rem }
 .audit-table td:first-child { font-weight: 600; color: var(--p-text-muted-color); width: 7rem }
+
+.te-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap }
+.te-link { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600;
+  color: var(--p-primary-color); text-decoration: none; font-size: .9rem }
+.te-link:hover { text-decoration: underline }
+.te-spacer { flex: 1 }
 
 .card-title-row { display: flex; align-items: center; gap: .6rem }
 .count {

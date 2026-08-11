@@ -530,6 +530,9 @@ export default {
         attachments: 'Attachments',
         audit: 'History',
       },
+      techExam: {
+        title: 'Technical exam',
+      },
       type: 'Request type',
       pickType: 'Choose a type…',
       note: 'Note',
