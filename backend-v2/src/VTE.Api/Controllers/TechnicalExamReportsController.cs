@@ -142,10 +142,10 @@ public class TechnicalExamReportsController : ControllerBase
         var total = await query.CountAsync();
 
         var asc = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
-        IQueryable<Domain.TechnicalExams.TechnicalExamReport> Order<TKey>(
+        IOrderedQueryable<Domain.TechnicalExams.TechnicalExamReport> Order<TKey>(
             System.Linq.Expressions.Expression<Func<Domain.TechnicalExams.TechnicalExamReport, TKey>> key)
             => asc ? query.OrderBy(key) : query.OrderByDescending(key);
-        var ordered = (sort ?? "").Trim().ToLowerInvariant() switch
+        var primary = (sort ?? "").Trim().ToLowerInvariant() switch
         {
             "id"        => Order(r => r.Id),
             "regnumber" => Order(r => r.RegNumber),
@@ -154,6 +154,9 @@ public class TechnicalExamReportsController : ControllerBase
             "type"      => Order(r => _db.TechnicalExamTypes.Where(t => t.Id == r.TechnicalExamTypeId).Select(t => (string?)t.Code).FirstOrDefault()),
             _           => Order(r => r.MadeDate),   // default: newest exam first
         };
+        // MadeDate е датум без време — без секундарен клуч редот во истиот ден е
+        // произволен и најновиот внес не се гледа најгоре. Id = ред на внесување.
+        var ordered = asc ? primary.ThenBy(r => r.Id) : primary.ThenByDescending(r => r.Id);
 
         var pageRows = await ordered
             .Skip((page - 1) * pageSize)
