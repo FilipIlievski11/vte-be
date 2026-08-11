@@ -122,9 +122,9 @@ public class RequestsController : ControllerBase
         // operator) sort via correlated subqueries so the order spans the whole
         // filtered set, not just the current page.
         var asc = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
-        IQueryable<Request> Order<TKey>(System.Linq.Expressions.Expression<Func<Request, TKey>> key)
+        IOrderedQueryable<Request> Order<TKey>(System.Linq.Expressions.Expression<Func<Request, TKey>> key)
             => asc ? query.OrderBy(key) : query.OrderByDescending(key);
-        var ordered = (sort ?? "").Trim().ToLowerInvariant() switch
+        var primary = (sort ?? "").Trim().ToLowerInvariant() switch
         {
             "id"       => Order(r => r.Id),
             "created"  => Order(r => r.CreatedAt),
@@ -140,6 +140,9 @@ public class RequestsController : ControllerBase
                                        .FirstOrDefault()),
             _          => query.OrderByDescending(r => r.CreatedAt),
         };
+        // Мигрираните/синхронизираните барања имаат CreatedAt на полноќ (без време),
+        // па истиот ден се редеше произволно. Id = ред на внесување.
+        var ordered = asc ? primary.ThenBy(r => r.Id) : primary.ThenByDescending(r => r.Id);
 
         var pageRows = await ordered
             .Skip((page - 1) * pageSize)

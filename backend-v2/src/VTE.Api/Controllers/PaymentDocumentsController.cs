@@ -140,15 +140,18 @@ public class PaymentDocumentsController : ControllerBase
         var total = await query.CountAsync();
 
         var asc = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
-        IQueryable<Domain.Payments.PaymentDocument> Order<TKey>(
+        IOrderedQueryable<Domain.Payments.PaymentDocument> Order<TKey>(
             System.Linq.Expressions.Expression<Func<Domain.Payments.PaymentDocument, TKey>> key)
             => asc ? query.OrderBy(key) : query.OrderByDescending(key);
-        var ordered = (sort ?? "").Trim().ToLowerInvariant() switch
+        var primary = (sort ?? "").Trim().ToLowerInvariant() switch
         {
             "due"  => Order(x => x.DueDate),
             "doc"  => Order(x => x.DocumentNumber),
             _      => Order(x => x.IssueDate),    // default: newest first
         };
+        // Секундарен клуч по Id: DueDate/DocumentNumber се врзуваат, а стабилниот
+        // редослед ја држи пагинацијата конзистентна и кај еднакви вредности.
+        var ordered = asc ? primary.ThenBy(x => x.Id) : primary.ThenByDescending(x => x.Id);
 
         var pageRows = await ordered
             .Skip((page - 1) * pageSize)
