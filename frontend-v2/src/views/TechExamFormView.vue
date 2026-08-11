@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
+import { useAuthStore } from '@/stores/auth';
 import { onClientCreated } from '@/utils/clientBus';
 import type {
   Client, Paged, VehicleRelationDto,
@@ -26,6 +27,7 @@ const { t } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const confirm = useConfirm();
+const auth = useAuthStore();
 
 const isEdit = computed(() => !!props.id);
 const loading = ref(false);
@@ -133,8 +135,17 @@ function onResultPicked() { resultTouched.value = true; }
 
 const typeOptions = computed(() =>
   types.value.map(x => ({ id: x.id, label: x.code ? `${x.code} · ${x.description}` : x.description })));
-const orgOptions = computed(() =>
-  organizations.value.map(o => ({ id: o.id, label: o.name || o.code || `#${o.id}` })));
+
+// Станицата на најавениот корисник = орг. со неговиот companyId. Операторите не
+// бираат станица: кај точно една своја таа се пополнува сама и полето се крие;
+// админот го задржува целиот избор (со своја предизбрана на нов преглед).
+const ownOrgs = computed(() =>
+  organizations.value.filter(o => o.companyId != null && o.companyId === auth.companyId));
+const orgLocked = computed(() => !auth.isAdmin && ownOrgs.value.length === 1);
+const orgOptions = computed(() => {
+  const list = auth.isAdmin || ownOrgs.value.length === 0 ? organizations.value : ownOrgs.value;
+  return list.map(o => ({ id: o.id, label: o.name || o.code || `#${o.id}` }));
+});
 const partOptions = computed(() =>
   parts.value.map(p => ({ id: p.id, label: p.code ? `${p.code} · ${p.description}` : p.description })));
 
@@ -408,6 +419,8 @@ function remove() {
 onMounted(async () => {
   await loadCatalogs();
   if (isEdit.value) await loadReport();
+  else if (organizationId.value == null && ownOrgs.value.length === 1)
+    organizationId.value = ownOrgs.value[0].id;
 });
 </script>
 
@@ -440,7 +453,7 @@ onMounted(async () => {
             <Select v-model="technicalExamTypeId" :options="typeOptions" optionLabel="label" optionValue="id"
                     :placeholder="t('techExam.form.pickType')" />
           </div>
-          <div class="field">
+          <div class="field" v-if="!orgLocked">
             <label>{{ t('techExam.station') }} *</label>
             <Select v-model="organizationId" :options="orgOptions" optionLabel="label" optionValue="id"
                     filter :placeholder="t('techExam.form.pickOrg')" />
