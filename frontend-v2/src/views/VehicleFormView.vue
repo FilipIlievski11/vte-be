@@ -114,6 +114,109 @@ function onMakerPicked() {
   if (c != null) form.value.madeCountryId = c;
 }
 
+// ---- Инлајн „Нов" во шифрарниците (легаси uxVehicleEdit паритет) ----
+// Операторот додава вид/каросерија/марка/модел/боја/тип на мотор директно од
+// формата. Серверот де-дуплицира по име, па двојно кликање не прави ѓубре.
+type LookupKind = 'category' | 'bodyType' | 'maker' | 'model' | 'color' | 'engineType';
+const LOOKUP_URL: Record<LookupKind, string> = {
+  category: '/vehicles/ref/categories',
+  bodyType: '/vehicles/ref/body-types',
+  maker: '/vehicles/ref/makers',
+  model: '/vehicles/ref/models',
+  color: '/vehicles/ref/colors',
+  engineType: '/vehicles/ref/engine-types',
+};
+
+const lkVisible = ref(false);
+const lkKind = ref<LookupKind>('category');
+const lkColorTarget = ref<'primary' | 'secondary'>('primary');
+const lkCode = ref('');
+const lkName = ref('');
+const lkCountryId = ref<number | null>(null);
+const lkSaving = ref(false);
+
+const lkTitle = computed(() => t(`vehicles.form.newLookup.title.${lkKind.value}`));
+const lkMakerName = computed(() => makers.value.find(m => m.id === selectedMakerId.value)?.name ?? '');
+
+function openLookup(kind: LookupKind, colorTarget: 'primary' | 'secondary' = 'primary') {
+  if (kind === 'model' && !selectedMakerId.value) {
+    toast.add({ severity: 'warn', summary: t('vehicles.form.newLookup.makerRequired'), life: 3000 });
+    return;
+  }
+  lkKind.value = kind;
+  lkColorTarget.value = colorTarget;
+  lkCode.value = ''; lkName.value = '';
+  lkCountryId.value = kind === 'maker' ? form.value.madeCountryId ?? null : null;
+  lkVisible.value = true;
+}
+
+async function saveLookup() {
+  const name = lkName.value.trim();
+  if (!name) return;
+  lkSaving.value = true;
+  try {
+    const kind = lkKind.value;
+    const body: Record<string, unknown> =
+      kind === 'maker' ? { name, countryId: lkCountryId.value }
+      : kind === 'model' ? { makerId: selectedMakerId.value, code: lkCode.value.trim() || null, name }
+      : { code: lkCode.value.trim() || null, name };
+    const { data } = await api.post<any>(LOOKUP_URL[kind], body);
+
+    // Серверот враќа постоечки запис ако името веќе го има — тогаш само избери го.
+    let existed = false;
+    switch (kind) {
+      case 'category':
+        existed = categories.value.some(x => x.id === data.id);
+        if (!existed) categories.value = [...categories.value, data].sort(byCode);
+        form.value.categoryId = data.id;
+        break;
+      case 'bodyType':
+        existed = bodyTypes.value.some(x => x.id === data.id);
+        if (!existed) bodyTypes.value = [...bodyTypes.value, data].sort(byName);
+        form.value.bodyTypeId = data.id;
+        break;
+      case 'color':
+        existed = colors.value.some(x => x.id === data.id);
+        if (!existed) colors.value = [...colors.value, data].sort(byName);
+        if (lkColorTarget.value === 'primary') form.value.primaryColorId = data.id;
+        else form.value.secondaryColorId = data.id;
+        break;
+      case 'engineType':
+        existed = engineTypes.value.some(x => x.id === data.id);
+        if (!existed) engineTypes.value = [...engineTypes.value, data].sort(byName);
+        form.value.engineTypeId = data.id;
+        break;
+      case 'maker':
+        existed = makers.value.some(x => x.id === data.id);
+        if (!existed) makers.value = [...makers.value, data].sort(byName);
+        selectedMakerId.value = data.id;
+        onMakerPicked();
+        break;
+      case 'model':
+        existed = models.value.some(x => x.id === data.id);
+        if (!existed) models.value = [...models.value, data].sort(byName);
+        form.value.modelId = data.id;
+        break;
+    }
+    lkVisible.value = false;
+    toast.add({
+      severity: existed ? 'info' : 'success',
+      summary: existed ? t('vehicles.form.newLookup.exists') : t('vehicles.form.newLookup.created'),
+      life: 2500,
+    });
+  } catch (e: any) {
+    toast.add({
+      severity: 'error', summary: t('vehicles.form.newLookup.failed'),
+      detail: e?.response?.data?.error ?? e?.message, life: 4000,
+    });
+  } finally { lkSaving.value = false; }
+}
+
+function byName(a: { name: string }, b: { name: string }) { return a.name.localeCompare(b.name); }
+function byCode(a: { code: string | null }, b: { code: string | null }) {
+  return (a.code ?? '').localeCompare(b.code ?? '');
+}
+
 // ---- „Дигитална сообраќајна" — жив преглед на клучните полиња со нивните кодови ----
 const licMakerModel = computed(() => {
   const mk = makers.value.find(m => m.id === selectedMakerId.value)?.name ?? '';
@@ -474,10 +577,18 @@ function fmtDate(s: string | null | undefined) {
         <div class="card-body">
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.category') }}</label>
-              <Select v-model="form.categoryId" :options="categoryOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+              <div class="inp-new">
+                <Select v-model="form.categoryId" :options="categoryOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('category')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.bodyType') }}</label>
-              <Select v-model="form.bodyTypeId" :options="bodyTypeOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+              <div class="inp-new">
+                <Select v-model="form.bodyTypeId" :options="bodyTypeOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('bodyType')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.paymentCategory') }}</label>
               <Select v-model="form.paymentCategoryId" :options="paymentCats" optionLabel="name" optionValue="id" placeholder="—" showClear />
@@ -485,12 +596,21 @@ function fmtDate(s: string | null | undefined) {
           </div>
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.maker') }}</label>
-              <Select v-model="selectedMakerId" :options="makers" optionLabel="name" optionValue="id" placeholder="—" showClear filter
-                      @update:modelValue="onMakerPicked" />
+              <div class="inp-new">
+                <Select v-model="selectedMakerId" :options="makers" optionLabel="name" optionValue="id" placeholder="—" showClear filter
+                        @update:modelValue="onMakerPicked" />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('maker')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.model') }}</label>
-              <Select v-model="form.modelId" :options="filteredModels" optionLabel="name" optionValue="id" placeholder="—" showClear filter
-                      :disabled="!selectedMakerId" />
+              <div class="inp-new">
+                <Select v-model="form.modelId" :options="filteredModels" optionLabel="name" optionValue="id" placeholder="—" showClear filter
+                        :disabled="!selectedMakerId" />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        :disabled="!selectedMakerId" v-tooltip.top="!selectedMakerId ? t('vehicles.form.newLookup.makerRequired') : undefined"
+                        @click="openLookup('model')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.madeCountry') }}</label>
               <Select v-model="form.madeCountryId" :options="countries" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
@@ -501,10 +621,18 @@ function fmtDate(s: string | null | undefined) {
           </div>
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.primaryColor') }}</label>
-              <Select v-model="form.primaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+              <div class="inp-new">
+                <Select v-model="form.primaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('color', 'primary')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.secondaryColor') }}</label>
-              <Select v-model="form.secondaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+              <div class="inp-new">
+                <Select v-model="form.secondaryColorId" :options="colorOptions" optionLabel="label" optionValue="id" placeholder="—" showClear filter />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('color', 'secondary')" />
+              </div>
             </div>
           </div>
         </div>
@@ -532,7 +660,11 @@ function fmtDate(s: string | null | undefined) {
           </div>
           <div class="row">
             <div class="field"><label>{{ t('vehicles.form.engineType') }}</label>
-              <Select v-model="form.engineTypeId" :options="engineTypes" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+              <div class="inp-new">
+                <Select v-model="form.engineTypeId" :options="engineTypes" optionLabel="name" optionValue="id" placeholder="—" showClear filter />
+                <Button :label="t('vehicles.form.newLookup.btn')" size="small" severity="secondary" outlined
+                        @click="openLookup('engineType')" />
+              </div>
             </div>
             <div class="field"><label>{{ t('vehicles.form.enginePowerKw') }}</label>
               <InputNumber v-model="form.enginePowerKw" :minFractionDigits="0" :maxFractionDigits="2" />
@@ -787,10 +919,53 @@ function fmtDate(s: string | null | undefined) {
       <Button :label="t('common.cancel')" severity="secondary" outlined size="small" :disabled="removeBusy" @click="removeVisible = false" />
     </template>
   </Dialog>
+
+  <!-- Инлајн „Нов" запис во шифрарник (вид/каросерија/марка/модел/боја/тип мотор) -->
+  <Dialog v-model:visible="lkVisible" :header="lkTitle" modal :style="{ width: '26rem' }">
+    <div class="lk-form">
+      <div v-if="lkKind === 'model'" class="lk-ctx">
+        <span class="muted">{{ t('vehicles.form.maker') }}:</span> <b>{{ lkMakerName }}</b>
+      </div>
+      <div v-if="lkKind !== 'maker'" class="field">
+        <label>{{ t('vehicles.form.newLookup.code') }}</label>
+        <InputText v-model="lkCode" :placeholder="t('vehicles.form.newLookup.codeHint')"
+                   @keydown.enter="saveLookup" />
+      </div>
+      <div class="field">
+        <label>{{ t('vehicles.form.newLookup.name') }} *</label>
+        <InputText v-model="lkName" autofocus @keydown.enter="saveLookup" />
+      </div>
+      <div v-if="lkKind === 'maker'" class="field">
+        <label>{{ t('vehicles.form.newLookup.country') }}</label>
+        <Select v-model="lkCountryId" :options="countries" optionLabel="name" optionValue="id"
+                placeholder="—" showClear filter />
+        <span class="muted lk-hint">{{ t('vehicles.form.newLookup.countryHint') }}</span>
+      </div>
+    </div>
+    <template #footer>
+      <Button :label="t('common.cancel')" severity="secondary" outlined size="small"
+              :disabled="lkSaving" @click="lkVisible = false" />
+      <Button :label="t('common.save')" icon="pi pi-check" size="small"
+              :disabled="!lkName.trim() || lkSaving" :loading="lkSaving" @click="saveLookup" />
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
 /* Same v1-style cards as ClientFormView. */
+
+/* Шифрарник-поле со инлајн „Нов" копче (легаси паритет). */
+.inp-new { display: flex; gap: .3rem; align-items: center }
+.inp-new > :deep(.p-select) { flex: 1 1 auto; min-width: 0 }
+.inp-new > :deep(.p-button) { flex: 0 0 auto; padding: .28rem .5rem; font-size: .72rem }
+
+.lk-form { display: flex; flex-direction: column; gap: .7rem }
+.lk-form .field { display: flex; flex-direction: column; gap: .25rem }
+.lk-ctx {
+  font-size: .8rem; padding: .35rem .5rem; border-radius: 6px;
+  background: var(--p-content-hover-background, rgba(0,0,0,.04));
+}
+.lk-hint { font-size: .7rem }
 
 /* „Дигитална сообраќајна" — документ-стил картичка (фиксни бои во двете теми). */
 .lic-card {

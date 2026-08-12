@@ -1,14 +1,18 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using VTE.Domain.Vehicles;
 using VTE.Infrastructure.Persistence;
 
 namespace VTE.Api.Controllers;
 
 /// <summary>
-/// Read-only endpoints for the Vehicle module lookup tables. Used to populate
-/// dropdowns on the Vehicle form / list filters. Admin-write endpoints can be
-/// added later if needed.
+/// Lookup endpoints for the Vehicle module. Reads populate the dropdowns on the
+/// Vehicle form / list filters; the POSTs back the inline „Нов" buttons on that
+/// form — legacy `uxVehicleEdit` lets the operator add a missing вид / каросерија /
+/// марка / модел / боја / тип на мотор on the spot instead of blocking on an admin.
+/// Every create de-duplicates on the trimmed name (the migrated legacy catalog is
+/// already littered with „OPEL" ×7 — we don't add to that).
 /// </summary>
 [ApiController]
 [Route("api/vehicles/ref")]
@@ -71,4 +75,112 @@ public class VehicleLookupsController : ControllerBase
     [HttpGet("relation-types")]
     public async Task<IActionResult> RelationTypes() =>
         Ok(await _db.ClientVehicleRelationTypes.AsNoTracking().OrderBy(x => x.Id).ToListAsync());
+
+    // ---- Inline „Нов" creates (legacy parity: operator adds a missing lookup) ----
+
+    public record LookupWriteDto(string? Code, string? Name);
+    public record MakerWriteDto(string? Name, int? CountryId, string? Trademark);
+    public record ModelWriteDto(int MakerId, string? Code, string? Name);
+
+    private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>Normalized name for the duplicate check — trimmed, case-insensitive.</summary>
+    private static bool SameName(string a, string b) =>
+        string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    [HttpPost("categories")]
+    public async Task<IActionResult> CreateCategory([FromBody] LookupWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        var all = await _db.VehicleCategories.AsNoTracking().ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        var e = new VehicleCategory { Code = Clean(dto.Code), Name = name, Active = true };
+        _db.VehicleCategories.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
+
+    [HttpPost("body-types")]
+    public async Task<IActionResult> CreateBodyType([FromBody] LookupWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        var all = await _db.VehicleBodyTypes.AsNoTracking().ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        var e = new VehicleBodyType { Code = Clean(dto.Code), Name = name, Active = true };
+        _db.VehicleBodyTypes.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
+
+    [HttpPost("colors")]
+    public async Task<IActionResult> CreateColor([FromBody] LookupWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        var all = await _db.VehicleColors.AsNoTracking().ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        var e = new VehicleColor { Code = Clean(dto.Code), Name = name, Active = true };
+        _db.VehicleColors.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
+
+    [HttpPost("engine-types")]
+    public async Task<IActionResult> CreateEngineType([FromBody] LookupWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        var all = await _db.VehicleEngineTypes.AsNoTracking().ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        var e = new VehicleEngineType { Code = Clean(dto.Code), Name = name, Active = true };
+        _db.VehicleEngineTypes.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
+
+    [HttpPost("makers")]
+    public async Task<IActionResult> CreateMaker([FromBody] MakerWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        var all = await _db.VehicleMakers.AsNoTracking().ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        if (dto.CountryId is int cid && cid > 0
+            && !await _db.Countries.AnyAsync(c => c.Id == (short)cid))
+            return BadRequest(new { error = "Непостоечка држава." });
+        var e = new VehicleMaker
+        {
+            Name = name,
+            CountryId = dto.CountryId is int c2 && c2 > 0 ? (short)c2 : null,
+            Trademark = Clean(dto.Trademark),
+            Active = true,
+        };
+        _db.VehicleMakers.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
+
+    /// <summary>Models de-duplicate within their maker — „GOLF" exists under many brands.</summary>
+    [HttpPost("models")]
+    public async Task<IActionResult> CreateModel([FromBody] ModelWriteDto dto)
+    {
+        var name = Clean(dto.Name);
+        if (name is null) return BadRequest(new { error = "Името е задолжително." });
+        if (dto.MakerId <= 0 || !await _db.VehicleMakers.AnyAsync(m => m.Id == dto.MakerId))
+            return BadRequest(new { error = "Марката е задолжителна." });
+        var all = await _db.VehicleModels.AsNoTracking().Where(m => m.MakerId == dto.MakerId).ToListAsync();
+        var dup = all.FirstOrDefault(x => SameName(x.Name, name));
+        if (dup != null) return Ok(dup);
+        var e = new VehicleModel { MakerId = dto.MakerId, Code = Clean(dto.Code), Name = name, Active = true };
+        _db.VehicleModels.Add(e);
+        await _db.SaveChangesAsync();
+        return Ok(e);
+    }
 }
