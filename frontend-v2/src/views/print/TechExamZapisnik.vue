@@ -16,38 +16,41 @@ const error = ref<string | null>(null);
 const lay = usePrintLayout('techexam-zapisnik', 215.9);
 const guides = ref(true);
 
-// Built-in default positions (mm) + font pt. Value fields carry size; checkbox slots
-// are fixed-size glyphs (size omitted). Extracted from the legacy .prnx render.
+// Built-in default positions (mm) + font pt — 1:1 од легаси
+// rptTehnickiPregledZapisnik.Designer.vb (Dpi=254 → координати во 0.1mm).
+// Внимание: редот на 116.4 е „Бр. оски | Бр. погонски оски", а на 135.5
+// „Најголема дозволена вк. маса | Седишта" — претходно двете беа заменети.
 const DEF: Record<string, { x: number; y: number; size?: number }> = {
-  org:            { x: 28.6,  y: 24.3,  size: 10 },
-  madeDate:       { x: 174.6, y: 15.9,  size: 9 },
-  regNumber:      { x: 174.6, y: 26.5,  size: 9 },
-  plate:          { x: 128.1, y: 46.6,  size: 10 },
-  customerName:   { x: 37,    y: 72,    size: 10 },
-  cityName:       { x: 58.2,  y: 80.4,  size: 10 },
-  communityName:  { x: 143.9, y: 80.4,  size: 10 },
-  livingAddress:  { x: 47.6,  y: 87.8,  size: 9 },
-  maker:          { x: 56.1,  y: 103.7, size: 9 },
-  modelFull:      { x: 131.2, y: 103.7, size: 9 },
-  makeYear:       { x: 66.7,  y: 110.3, size: 9 },
-  colorFull:      { x: 142.9, y: 110.3, size: 9 },
-  axleCount:      { x: 66.7,  y: 116.8, size: 9 },
-  maxWeight:      { x: 142.9, y: 116.8, size: 9 },
-  engine:         { x: 66.7,  y: 123.4, size: 9 },
-  vin:            { x: 142.9, y: 123.4, size: 9 },
-  capacity:       { x: 79.4,  y: 129.9, size: 9 },
-  power:          { x: 147.1, y: 129.9, size: 9 },
-  propAxis:       { x: 79.4,  y: 136.5, size: 9 },
-  seats:          { x: 142.9, y: 136.5, size: 9 },
-  emptyWeight:    { x: 79.4,  y: 143,   size: 9 },
-  country:        { x: 79.4,  y: 148.5, size: 9 },
-  // checkbox glyph slots (position-editable, fixed glyph size)
-  social:     { x: 50.8, y: 160.4 },
-  private:    { x: 50.8, y: 166.7 },
-  redoven:    { x: 26.5, y: 177.3 },
-  redovenNa6: { x: 49.7, y: 177.3 },
-  delumno:    { x: 98.4, y: 177.3 },
-  potpoln:    { x: 145,  y: 177.3 },
+  org:            { x: 28.6,  y: 24.3,  size: 9.75 },   // XrLabel1 (286, 243)
+  madeDate:       { x: 174.6, y: 15.9,  size: 9.75 },   // XrLabel2 (1746, 159)
+  regNumber:      { x: 174.6, y: 26.5,  size: 9.75 },   // XrLabel15 (1746, 265)
+  plate:          { x: 128.1, y: 46.6,  size: 9.75 },   // lblNovaReg (1281, 466)
+  customerName:   { x: 37,    y: 72,    size: 9.75 },   // XrLabel5 (370, 720)
+  cityName:       { x: 58.2,  y: 80.4,  size: 9.75 },   // XrLabel4 (582, 804)
+  communityName:  { x: 143.9, y: 80.4,  size: 9.75 },   // XrLabel8 (1439, 804)
+  livingAddress:  { x: 47.6,  y: 87.8,  size: 9.75 },   // XrLabel7 (476, 878)
+  maker:          { x: 56.1,  y: 103.7, size: 9.75 },   // XrLabel6 (561, 1037)
+  modelFull:      { x: 131.2, y: 103.7, size: 9.75 },   // XrLabel14 (1312, 1037)
+  makeYear:       { x: 66.7,  y: 110.1, size: 9.75 },   // XrLabel16 (667, 1101)
+  colorFull:      { x: 142.9, y: 110.1, size: 9.75 },   // XrLabel12 (1429, 1101)
+  axleCount:      { x: 66.7,  y: 116.4, size: 9.75 },   // XrLabel17 (667, 1164)
+  propAxis:       { x: 142.9, y: 116.4, size: 9.75 },   // XrLabel21 (1429, 1164)
+  engine:         { x: 66.7,  y: 122.8, size: 9.75 },   // XrLabel9 (667, 1228)
+  vin:            { x: 142.9, y: 122.8, size: 9.75 },   // XrLabel18 (1429, 1228)
+  capacity:       { x: 79.4,  y: 129.1, size: 9.75 },   // XrLabel10 (794, 1291)
+  power:          { x: 147.1, y: 129.1, size: 9.75 },   // XrLabel19 (1471, 1291)
+  maxWeight:      { x: 79.4,  y: 135.5, size: 9.75 },   // XrLabel11 (794, 1355)
+  seats:          { x: 142.9, y: 135.5, size: 9.75 },   // XrLabel20 (1429, 1355)
+  emptyWeight:    { x: 79.4,  y: 141.8, size: 9.75 },   // XrLabel13 (794, 1418)
+  country:        { x: 79.4,  y: 147.1, size: 9.75 },   // lblCountryMade (794, 1471)
+  // Checkbox glyph slots — легаси контролата е висока 6.4mm со ~4mm квадратче
+  // вертикално центрирано → top на квадратчето = легаси y + 1.1mm.
+  social:     { x: 50.8, y: 159.9 },   // CheckBoxSocial (508, 1588)
+  private:    { x: 50.8, y: 166.2 },   // CheckBoxPrivate (508, 1651)
+  redoven:    { x: 26.5, y: 176.8 },   // CheckBoxRedoven (265, 1757)
+  redovenNa6: { x: 49.7, y: 176.8 },   // CheckBoxRedovenNa6 (497, 1757)
+  delumno:    { x: 98.4, y: 176.8 },   // CheckBoxDelumno (984, 1757)
+  potpoln:    { x: 145,  y: 176.8 },   // CheckBoxPotpoln (1450, 1757)
 };
 const CB_KEYS = ['social', 'private', 'redoven', 'redovenNa6', 'delumno', 'potpoln'];
 lay.setDefaults(DEF);

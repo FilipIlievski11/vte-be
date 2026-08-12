@@ -487,7 +487,7 @@ public class TechnicalExamReportsController : ControllerBase
         string? customerName = null, cityName = null, communityName = null, livingAddress = null;
         bool isSocial = false;
         string? plate = null, maker = null, modelFull = null, madeCountry = null, colorFull = null, vin = null, engineTypeAndNum = null;
-        int? makeYear = null, axleCount = null;
+        int? makeYear = null, axleCount = null, propulsionAxis = null;
         double? capCc = null, powKw = null, emptyKg = null, maxKg = null;
         short? seats = null;
 
@@ -525,14 +525,16 @@ public class TechnicalExamReportsController : ControllerBase
                         {
                             x.Plate, x.Vin, x.EngineNumber, x.ModelId, x.ModelVariant, x.HasLpg, x.ManufactureDate,
                             x.MadeCountryId, x.PrimaryColorId, x.EngineTypeId,
-                            x.EngineWorkingCapacityCc, x.EnginePowerKw, x.EmptyWeightKg, x.MaxAllowedWeightKg, x.AxleCount, x.Seats
+                            x.EngineWorkingCapacityCc, x.EnginePowerKw, x.EmptyWeightKg, x.MaxAllowedWeightKg,
+                            x.AxleCount, x.PropulsionAxleCount, x.Seats
                         }).FirstOrDefaultAsync();
                     if (v != null)
                     {
                         plate = v.Plate; vin = v.Vin;
                         capCc = v.EngineWorkingCapacityCc; powKw = v.EnginePowerKw;
                         emptyKg = v.EmptyWeightKg; maxKg = v.MaxAllowedWeightKg;
-                        axleCount = v.AxleCount; seats = v.Seats; makeYear = v.ManufactureDate?.Year;
+                        axleCount = v.AxleCount; propulsionAxis = v.PropulsionAxleCount;
+                        seats = v.Seats; makeYear = v.ManufactureDate?.Year;
 
                         string? modelName = null;
                         if (v.ModelId.HasValue)
@@ -545,7 +547,8 @@ public class TechnicalExamReportsController : ControllerBase
                                 maker = await _db.VehicleMakers.AsNoTracking().Where(x => x.Id == m.MakerId).Select(x => x.Name).FirstOrDefaultAsync();
                             }
                         }
-                        modelFull = string.Join(' ', new[] { modelName, v.ModelVariant, (v.HasLpg == true ? "ТНГ" : null) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                        // Легаси ModelNameAddingTng лепи латинично " TNG" (примерок: „MERIVA  TNG").
+                        modelFull = string.Join(' ', new[] { modelName, v.ModelVariant, (v.HasLpg == true ? "TNG" : null) }.Where(s => !string.IsNullOrWhiteSpace(s)));
                         if (string.IsNullOrWhiteSpace(modelFull)) modelFull = null;
 
                         if (v.MadeCountryId.HasValue)
@@ -569,7 +572,7 @@ public class TechnicalExamReportsController : ControllerBase
             r.Id, r.RegNumber, r.MadeDate, r.TechnicalExamTypeId, isSocial,
             orgName, customerName, cityName, communityName, livingAddress,
             plate, maker, modelFull, makeYear, madeCountry, colorFull, vin, engineTypeAndNum,
-            capCc, powKw, emptyKg, maxKg, axleCount, null /* PropulsionAxis not in v2 */, seats));
+            capCc, powKw, emptyKg, maxKg, axleCount, propulsionAxis, seats));
     }
 
     // ---- Lookups for the create/edit form ----

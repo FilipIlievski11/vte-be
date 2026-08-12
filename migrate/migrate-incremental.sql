@@ -169,7 +169,8 @@ INSERT INTO dbo.Vehicle (
   MaxTrailerBrakedKg, MaxTrailerUnbrakedKg, MaxHitchLoadKg,
   AxleCount, WheelCount, AxleLoad1Kg, AxleLoad2Kg,
   Seats, StandingSeats, Co2GKm, NoiseStaticDb, NoiseMovingDb,
-  TypeText, ModelVariant, ApprovalMark, Note, Active, CreatedAt)
+  TypeText, ModelVariant, ApprovalMark, Note, Active, CreatedAt,
+  PropulsionAxleCount, DoorCount, HasHook, HasWinch)
 SELECT
   v.Id, CAST(4 AS tinyint),
   COALESCE(NULLIF(LTRIM(RTRIM(v.ShellNumber)), N''), N''),
@@ -187,7 +188,8 @@ SELECT
   NULLIF(v.NumberOfAxis, 0), NULLIF(v.NumberOfWheels, 0), NULLIF(v.OsnoOptovaruvanje1, 0), NULLIF(v.OsnoOptovaruvanje2, 0),
   NULLIF(v.NumberOfSeats, 0), NULLIF(v.NumberOfStandingSeats, 0), NULLIF(v.CO2, 0), NULLIF(v.NoiseStatic, 0), NULLIF(v.NoiseMovment, 0),
   NULLIF(LTRIM(RTRIM(v.Tip)), N''), NULLIF(LTRIM(RTRIM(v.VehicleModelAdding)), N''), NULLIF(LTRIM(RTRIM(v.OznakaNaOdobrenie)), N''),
-  NULLIF(LTRIM(RTRIM(v.Note)), N''), v.Active, GETUTCDATE()
+  NULLIF(LTRIM(RTRIM(v.Note)), N''), v.Active, GETUTCDATE(),
+  NULLIF(v.PropulsionAxis, 0), NULLIF(v.NumberOfDoors, 0), v.Hook, v.Vitlo
 FROM VTEZVV_LIVE.VTEZVV.dbo.Vehicles v
 LEFT JOIN dbo.VehicleCategory   cat  ON cat.Id  = CAST(NULLIF(v.IdVehicleCategories, 0) AS smallint)
 LEFT JOIN dbo.VehicleBodyType   bt   ON bt.Id   = NULLIF(v.IdVehicleBodyType, 0)
