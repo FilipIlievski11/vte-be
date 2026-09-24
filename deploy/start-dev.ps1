@@ -48,8 +48,26 @@ if (-not $Rezim) {
     $Rezim = if ($izbor -eq '2') { 'prod' } else { 'dvete' }
 }
 
+# LocalDB знае да заглави (зомби sqlservr → pipe „Access is denied" → API 500).
+# Пред стартот: проба-конекција, па оздравување ако не одговара.
+function Repair-LocalDb {
+    $conn = New-Object System.Data.SqlClient.SqlConnection 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Connect Timeout=8'
+    try { $conn.Open(); $conn.Close(); return $true } catch { }
+    Write-Host 'LocalDB не одговара — обид за оздравување…' -ForegroundColor Yellow
+    sqllocaldb stop MSSQLLocalDB -k 2>&1 | Out-Null
+    Get-CimInstance Win32_Process -Filter "Name='sqlservr.exe'" |
+        Where-Object { $_.CommandLine -match 'Local DB|LOCALDB' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+    sqllocaldb start MSSQLLocalDB 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+    try { $conn.Open(); $conn.Close(); Write-Host 'LocalDB оздравена.' -ForegroundColor Green; return $true }
+    catch { Write-Host 'LocalDB сè уште не одговара — API-то нема да работи. Провери рачно: sqllocaldb info MSSQLLocalDB' -ForegroundColor Red; return $false }
+}
+
 # ---- API (само во режим „dvete") ----
 if ($Rezim -eq 'dvete') {
+    $null = Repair-LocalDb
     if (Test-VtePort 5300) {
         Write-Host 'API веќе работи на 5300 — не пуштам втор.' -ForegroundColor Yellow
     } else {
