@@ -1,4 +1,4 @@
-﻿-- =============================================================================
+-- =============================================================================
 -- INCREMENTAL top-up: pull NEW legacy records (Id > current target max) from the
 -- LIVE remote DB (linked server [VTEZVV_LIVE] → 195.26.159.162,7899 / VTEZVV)
 -- into VTE. Purely additive — never wipes or updates existing rows.
@@ -207,6 +207,94 @@ SET @rows = @@ROWCOUNT;
 SET IDENTITY_INSERT dbo.Vehicle OFF;
 -- (no RESEED: identity floor 10,000,000 for v2-native rows — see fix-v2-native-id-space.sql)
 PRINT CONCAT('  -> ', @rows, ' new Vehicles.');
+
+-- ----------------------------------------------------------------------------
+-- 2б. Освежување на ПОСТОЕЧКИТЕ огледани возила (Id < 10M) — легаси е извор на
+-- вистина за нив. Без ова, пререгистрација/одјава/корекција во легаси никогаш
+-- не стигнуваше во v2 (извештаите покажуваа стари таблици — фатено 24.09.2026,
+-- 605 возила со застарена таблица, 107 во августовскиот извештај).
+-- EXCEPT-диф (NULL-safe) — се пишува само каде навистина има разлика;
+-- верификувано идемпотентно на прод (втора егзекуција: 0-1 реда).
+-- ----------------------------------------------------------------------------
+UPDATE t SET
+  t.Vin                        = COALESCE(NULLIF(LTRIM(RTRIM(v.ShellNumber)), N''), N''),
+  t.EngineNumber               = NULLIF(LTRIM(RTRIM(v.EngineNumber)),          N''),
+  t.Plate                      = NULLIF(LTRIM(RTRIM(v.LastRegistratinNumber)), N''),
+  t.LastRegistrationValidUntil = CASE WHEN v.LastRegistrationValidTill > '1900-01-01' AND v.LastRegistrationValidTill < '2100-01-01' THEN v.LastRegistrationValidTill END,
+  t.CategoryId = cat.Id, t.BodyTypeId = bt.Id, t.ModelId = mdl.Id,
+  t.PrimaryColorId = col1.Id, t.SecondaryColorId = col2.Id, t.MadeCountryId = co.Id,
+  t.FuelId = f1.Id, t.SecondFuelId = f2.Id, t.EngineTypeId = et.Id,
+  t.EcoProgramId = eco.Id, t.PaymentCategoryId = pc.Id,
+  t.EnginePowerKw = NULLIF(v.EnginePowerOutPut, 0), t.EngineWorkingCapacityCc = NULLIF(v.EngineWorkingCapacity, 0),
+  t.MaxRpm = NULLIF(v.BrojNaVrtezi, 0), t.MaxSpeedKmh = NULLIF(v.MaxSpeed, 0),
+  t.HasLpg = v.TNG, t.ManufactureDate = v.MakeDate,
+  t.LengthMm = NULLIF(v.VehicleSizeLength, 0), t.WidthMm = NULLIF(v.VehicleSizeWidth, 0), t.HeightMm = NULLIF(v.VehicleSizeHight, 0),
+  t.EmptyWeightKg = NULLIF(v.EmptyWaight, 0), t.MaxAllowedWeightKg = NULLIF(v.MaximunAllowedWaight, 0),
+  t.MaxLegalTotalMassKg = NULLIF(v.MaxLegVkMasa, 0), t.MaxConstructiveTotalMassKg = NULLIF(v.MaxKonstVkMasa, 0),
+  t.MaxLegalGroupMassKg = NULLIF(v.MaxLegVkMasaGrupa, 0),
+  t.TrailerMassWithBrakesKg = NULLIF(LTRIM(RTRIM(v.TrailerWaightWithBreak)), N''),
+  t.TrailerMassWithoutBrakesKg = NULLIF(LTRIM(RTRIM(v.TrailerWaightWithoutBreak)), N''),
+  t.MaxTrailerBrakedKg = NULLIF(v.MaxKonstVkMasaKocnaPrikolka, 0), t.MaxTrailerUnbrakedKg = NULLIF(v.MaxKonstVkMasaNeKocnaPrikolka, 0),
+  t.MaxHitchLoadKg = NULLIF(v.MaxKonstOptovaruvanjeVoPriklucok, 0),
+  t.AxleCount = NULLIF(v.NumberOfAxis, 0), t.WheelCount = NULLIF(v.NumberOfWheels, 0),
+  t.AxleLoad1Kg = NULLIF(v.OsnoOptovaruvanje1, 0), t.AxleLoad2Kg = NULLIF(v.OsnoOptovaruvanje2, 0),
+  t.Seats = NULLIF(v.NumberOfSeats, 0), t.StandingSeats = NULLIF(v.NumberOfStandingSeats, 0),
+  t.Co2GKm = NULLIF(v.CO2, 0), t.NoiseStaticDb = NULLIF(v.NoiseStatic, 0), t.NoiseMovingDb = NULLIF(v.NoiseMovment, 0),
+  t.TypeText = NULLIF(LTRIM(RTRIM(v.Tip)), N''), t.ModelVariant = NULLIF(LTRIM(RTRIM(v.VehicleModelAdding)), N''),
+  t.ApprovalMark = NULLIF(LTRIM(RTRIM(v.OznakaNaOdobrenie)), N''), t.Note = NULLIF(LTRIM(RTRIM(v.Note)), N''),
+  t.Active = v.Active,
+  t.PropulsionAxleCount = NULLIF(v.PropulsionAxis, 0), t.DoorCount = NULLIF(v.NumberOfDoors, 0),
+  t.HasHook = v.Hook, t.HasWinch = v.Vitlo
+FROM dbo.Vehicle t
+JOIN VTEZVV_LIVE.VTEZVV.dbo.Vehicles v ON v.Id = t.Id
+LEFT JOIN dbo.VehicleCategory   cat  ON cat.Id  = CAST(NULLIF(v.IdVehicleCategories, 0) AS smallint)
+LEFT JOIN dbo.VehicleBodyType   bt   ON bt.Id   = NULLIF(v.IdVehicleBodyType, 0)
+LEFT JOIN dbo.VehicleModel      mdl  ON mdl.Id  = NULLIF(v.IdVehicleModel, 0)
+LEFT JOIN dbo.VehicleColor      col1 ON col1.Id = CAST(NULLIF(v.IdPrimaryColor, 0) AS smallint)
+LEFT JOIN dbo.VehicleColor      col2 ON col2.Id = CAST(NULLIF(v.IdSecondaryColor, 0) AS smallint)
+LEFT JOIN dbo.Country           co   ON co.Id   = CAST(NULLIF(v.IdMadeCountry, 0) AS smallint)
+LEFT JOIN dbo.VehicleFuel       f1   ON f1.Id   = CASE WHEN v.IdEnginePowerSource BETWEEN 1 AND 255 THEN CAST(v.IdEnginePowerSource AS tinyint) END
+LEFT JOIN dbo.VehicleFuel       f2   ON f2.Id   = CASE WHEN v.IdEngineSecondPowerSource BETWEEN 1 AND 255 THEN CAST(v.IdEngineSecondPowerSource AS tinyint) END
+LEFT JOIN dbo.VehicleEngineType et   ON et.Id   = NULLIF(v.IdEngineType, 0)
+LEFT JOIN dbo.VehicleEcoProgram eco  ON eco.Id  = CASE WHEN v.IdEngineEcoProgram BETWEEN 1 AND 255 THEN CAST(v.IdEngineEcoProgram AS tinyint) END
+LEFT JOIN dbo.VehiclePaymentCategory pc ON pc.Id = CASE WHEN v.IdVehicleCategoryForPayments BETWEEN 1 AND 255 THEN CAST(v.IdVehicleCategoryForPayments AS tinyint) END
+WHERE t.Id < 10000000
+  AND EXISTS (
+    SELECT NULLIF(LTRIM(RTRIM(v.LastRegistratinNumber)), N'') COLLATE DATABASE_DEFAULT,
+           CASE WHEN v.LastRegistrationValidTill > '1900-01-01' AND v.LastRegistrationValidTill < '2100-01-01' THEN v.LastRegistrationValidTill END,
+           COALESCE(NULLIF(LTRIM(RTRIM(v.ShellNumber)), N''), N'') COLLATE DATABASE_DEFAULT, NULLIF(LTRIM(RTRIM(v.EngineNumber)), N'') COLLATE DATABASE_DEFAULT,
+           cat.Id, bt.Id, mdl.Id, col1.Id, col2.Id, co.Id, f1.Id, f2.Id, et.Id, eco.Id, pc.Id,
+           NULLIF(v.EnginePowerOutPut, 0), NULLIF(v.EngineWorkingCapacity, 0),
+           NULLIF(v.BrojNaVrtezi, 0), NULLIF(v.MaxSpeed, 0), v.TNG, v.MakeDate,
+           NULLIF(v.VehicleSizeLength, 0), NULLIF(v.VehicleSizeWidth, 0), NULLIF(v.VehicleSizeHight, 0),
+           NULLIF(v.EmptyWaight, 0), NULLIF(v.MaximunAllowedWaight, 0), NULLIF(v.MaxLegVkMasa, 0),
+           NULLIF(v.MaxKonstVkMasa, 0), NULLIF(v.MaxLegVkMasaGrupa, 0),
+           NULLIF(LTRIM(RTRIM(v.TrailerWaightWithBreak)), N'') COLLATE DATABASE_DEFAULT, NULLIF(LTRIM(RTRIM(v.TrailerWaightWithoutBreak)), N'') COLLATE DATABASE_DEFAULT,
+           NULLIF(v.MaxKonstVkMasaKocnaPrikolka, 0), NULLIF(v.MaxKonstVkMasaNeKocnaPrikolka, 0),
+           NULLIF(v.MaxKonstOptovaruvanjeVoPriklucok, 0),
+           NULLIF(v.NumberOfAxis, 0), NULLIF(v.NumberOfWheels, 0),
+           NULLIF(v.OsnoOptovaruvanje1, 0), NULLIF(v.OsnoOptovaruvanje2, 0),
+           NULLIF(v.NumberOfSeats, 0), NULLIF(v.NumberOfStandingSeats, 0),
+           NULLIF(v.CO2, 0), NULLIF(v.NoiseStatic, 0), NULLIF(v.NoiseMovment, 0),
+           NULLIF(LTRIM(RTRIM(v.Tip)), N'') COLLATE DATABASE_DEFAULT, NULLIF(LTRIM(RTRIM(v.VehicleModelAdding)), N'') COLLATE DATABASE_DEFAULT,
+           NULLIF(LTRIM(RTRIM(v.OznakaNaOdobrenie)), N'') COLLATE DATABASE_DEFAULT, NULLIF(LTRIM(RTRIM(v.Note)), N'') COLLATE DATABASE_DEFAULT,
+           v.Active, NULLIF(v.PropulsionAxis, 0), NULLIF(v.NumberOfDoors, 0), v.Hook, v.Vitlo
+    EXCEPT
+    SELECT t.Plate, t.LastRegistrationValidUntil, t.Vin, t.EngineNumber,
+           t.CategoryId, t.BodyTypeId, t.ModelId, t.PrimaryColorId, t.SecondaryColorId, t.MadeCountryId,
+           t.FuelId, t.SecondFuelId, t.EngineTypeId, t.EcoProgramId, t.PaymentCategoryId,
+           t.EnginePowerKw, t.EngineWorkingCapacityCc, t.MaxRpm, t.MaxSpeedKmh, t.HasLpg, t.ManufactureDate,
+           t.LengthMm, t.WidthMm, t.HeightMm,
+           t.EmptyWeightKg, t.MaxAllowedWeightKg, t.MaxLegalTotalMassKg, t.MaxConstructiveTotalMassKg, t.MaxLegalGroupMassKg,
+           t.TrailerMassWithBrakesKg, t.TrailerMassWithoutBrakesKg,
+           t.MaxTrailerBrakedKg, t.MaxTrailerUnbrakedKg, t.MaxHitchLoadKg,
+           t.AxleCount, t.WheelCount, t.AxleLoad1Kg, t.AxleLoad2Kg,
+           t.Seats, t.StandingSeats, t.Co2GKm, t.NoiseStaticDb, t.NoiseMovingDb,
+           t.TypeText, t.ModelVariant, t.ApprovalMark, t.Note,
+           t.Active, t.PropulsionAxleCount, t.DoorCount, t.HasHook, t.HasWinch
+  );
+
+PRINT CONCAT('  -> ', @@ROWCOUNT, ' refreshed Vehicles (legacy edits).');
 
 -- ============================================================================
 -- 3. VehicleRegistration (gap-fill, Id < 10M)
