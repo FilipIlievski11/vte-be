@@ -46,6 +46,21 @@ if (Test-VtePort 5174) {
     Write-Host 'FE се пушта во свој прозорец (порта 5174)…' -ForegroundColor Cyan
 }
 
-Start-Sleep -Seconds 8
-Start-Process 'http://localhost:5174'
-Write-Host 'Отворено: http://localhost:5174' -ForegroundColor Green
+# Почекај двете да проработат па отвори прегледувач (првиот dotnet run билдира
+# Debug од нула — со OneDrive тоа знае да трае минута и повеќе).
+Write-Host 'Чекам API (5300) и FE (5174) да се кренат…' -ForegroundColor DarkGray
+$rok = (Get-Date).AddSeconds(120)
+$apiOk = $false; $feOk = $false
+while ((Get-Date) -lt $rok -and -not ($apiOk -and $feOk)) {
+    if (-not $apiOk) { $apiOk = Test-VtePort 5300 }
+    if (-not $feOk)  { $feOk  = Test-VtePort 5174 }
+    Start-Sleep -Seconds 2
+}
+if ($apiOk -and $feOk) {
+    Start-Process 'http://localhost:5174'
+    Write-Host 'Сè работи — отворено: http://localhost:5174' -ForegroundColor Green
+} else {
+    if (-not $apiOk) { Write-Host 'API уште не одговара на 5300 — погледни во прозорецот „VTE API" за грешка.' -ForegroundColor Yellow }
+    if (-not $feOk)  { Write-Host 'FE уште не одговара на 5174 — погледни во прозорецот „VTE FE" за грешка.'  -ForegroundColor Yellow }
+    Write-Host 'Кога ќе се кренат, отвори рачно: http://localhost:5174' -ForegroundColor Yellow
+}
