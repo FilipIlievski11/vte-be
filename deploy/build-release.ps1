@@ -6,13 +6,24 @@
 # IIS, or any VPS. The zip contains the published .NET API with the Vue build
 # in wwwroot/, so one app serves both the UI and /api on the same origin.
 
-param([string]$OutDir = "$PSScriptRoot\out")
+param(
+    [string]$OutDir = "$PSScriptRoot\out",
+    # FE кодот живее во посебно репо (Repos\VTE\FE) од septemvri 2026; кога
+    # frontend-v2 не постои во ова репо, се бара во соседното FE репо.
+    [string]$FrontendDir = ''
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
-Write-Host "[1/4] Building frontend (vite)..." -ForegroundColor Cyan
-Push-Location "$root\frontend-v2"
+if (-not $FrontendDir) {
+    $FrontendDir = if (Test-Path "$root\frontend-v2") { "$root\frontend-v2" }
+                   else { Join-Path (Split-Path $root -Parent) 'FE\frontend-v2' }
+}
+if (-not (Test-Path "$FrontendDir\package.json")) { throw "Frontend не е најден: $FrontendDir" }
+
+Write-Host "[1/4] Building frontend (vite): $FrontendDir" -ForegroundColor Cyan
+Push-Location $FrontendDir
 try { npm run build; if ($LASTEXITCODE -ne 0) { throw "vite build failed" } }
 finally { Pop-Location }
 
@@ -25,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 Write-Host "[3/4] Bundling SPA into wwwroot..." -ForegroundColor Cyan
 $wwwroot = Join-Path $publish 'wwwroot'
 New-Item -ItemType Directory -Force $wwwroot | Out-Null
-Copy-Item "$root\frontend-v2\dist\*" -Destination $wwwroot -Recurse -Force
+Copy-Item "$FrontendDir\dist\*" -Destination $wwwroot -Recurse -Force
 
 # Version marker: "<git-hash>[-dirty] <build time>" -> served at /version.txt on prod.
 # deploy-to-prod.ps1 reads it to warn when prod already runs the same version.

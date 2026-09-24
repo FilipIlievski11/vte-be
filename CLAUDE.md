@@ -1,6 +1,14 @@
 # Project context for Claude
 
-You're working on **VTE** — a multi-tenant SaaS rewrite (.NET 10 + Vue 3) of a legacy VB.NET WinForms vehicle-inspection system used in Macedonia. The repo holds the new code (`backend-v2/`, `frontend-v2/`), the legacy code (`VTE/`, `WinApp/`, etc.) kept for parity-checking, and SQL migration scripts (`migrate/`).
+> **Repo split (2026-09-24):** this is the **BE repo** (`Repos\VTE\BE`) — backend
+> (`backend-v2/`), SQL миграции (`migrate/`), deploy скрипти (`deploy/`) и docs.
+> Frontend-от живее во соседното **FE repo** (`Repos\VTE\FE`, само `frontend-v2/`).
+> Легаси VB.NET кодот (VTE/, WinApp/…) остана САМО во стариот trunk
+> (`Repos\trunk\trunk`) — таму се бара легаси ground truth. Двете нови репоа ја
+> носат целата git историја. `deploy/build-release.ps1` го наоѓа FE билдот во
+> `..\FE\frontend-v2` автоматски.
+
+You're working on **VTE** — a multi-tenant SaaS rewrite (.NET 10 + Vue 3) of a legacy VB.NET WinForms vehicle-inspection system used in Macedonia. This repo holds the backend (`backend-v2/`) and SQL migration scripts (`migrate/`); the Vue frontend is in the sibling FE repo, and the legacy code (`VTE/`, `WinApp/`, etc.) stays in the old trunk repo for parity-checking.
 
 Read [`README.md`](README.md) for repo layout, [`db/README.md`](db/README.md) for fresh-machine setup, and [`migrate/README.md`](migrate/README.md) to import real data. **Full reference docs live in [`docs/`](docs/README.md)** — architecture, every module, fiscal, prints, deployment, migration, and an operator guide.
 
