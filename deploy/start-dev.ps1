@@ -4,12 +4,13 @@
 #   .\deploy\start-dev.ps1 -Rezim dvete   # без прашање: двете локално
 #   .\deploy\start-dev.ps1 -Rezim prod    # без прашање: FE → прод API
 #
-# Режими:
-#   1) „dvete" — API прозорец (dotnet run, порта 5300, ЛОКАЛНА LocalDB база)
-#               + FE прозорец (npm run dev, 5174) → сигурно за проби
-#   2) „prod"  — САМО FE прозорец (5174), а /api оди кон ПРОД
-#               (https://116.202.8.155.sslip.io) преку Vite proxy →
-#               ВИСТИНСКИ ПОДАТОЦИ, вистински логин-креденцијали!
+# Режими (И ДВАТА работат врз ПРОД податоците — одлука 24.09.2026):
+#   1) „dvete" — API прозорец (dotnet run, 5300, база = ПРОД преку SSH тунел
+#               од appsettings.Development.json) + FE прозорец (5174).
+#               За тестирање на НОВ BE-код врз вистински податоци.
+#   2) „prod"  — САМО FE прозорец (5174), /api → КАЦЕНИОТ прод API
+#               (https://116.202.8.155.sslip.io). За чист FE-развој.
+# Логин: секогаш прод-креденцијалите.
 #
 # Гаснење: затвори ги прозорците (или Ctrl+C во нив). За смена на режим
 # прво затвори го стариот FE прозорец — портата 5174 е една.
@@ -42,38 +43,40 @@ function Test-VtePort([int]$port) {
 # ---- Избор на режим ----
 if (-not $Rezim) {
     Write-Host ''
-    Write-Host '  1) Двете локално   — API (5300, локална база) + FE (5174)' -ForegroundColor Cyan
-    Write-Host '  2) FE -> ПРОД API  — само FE (5174), податоците се ВИСТИНСКИ' -ForegroundColor Yellow
+    Write-Host '  1) API + FE локално — API-то работи врз ПРОД базата (тунел)' -ForegroundColor Cyan
+    Write-Host '  2) само FE          — /api оди кон КАЦЕНИОТ прод API' -ForegroundColor Yellow
+    Write-Host '  (двата режима = вистински податоци, прод логин)' -ForegroundColor DarkGray
     $izbor = Read-Host 'Режим [1/2] (Enter = 1)'
     $Rezim = if ($izbor -eq '2') { 'prod' } else { 'dvete' }
 }
 
-# LocalDB знае да заглави (зомби sqlservr → pipe „Access is denied" → API 500).
-# Пред стартот: проба-конекција, па оздравување ако не одговара.
-function Repair-LocalDb {
-    $conn = New-Object System.Data.SqlClient.SqlConnection 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Connect Timeout=8'
-    try { $conn.Open(); $conn.Close(); return $true } catch { }
-    Write-Host 'LocalDB не одговара — обид за оздравување…' -ForegroundColor Yellow
-    sqllocaldb stop MSSQLLocalDB -k 2>&1 | Out-Null
-    Get-CimInstance Win32_Process -Filter "Name='sqlservr.exe'" |
-        Where-Object { $_.CommandLine -match 'Local DB|LOCALDB' } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    Start-Sleep -Seconds 2
-    sqllocaldb start MSSQLLocalDB 2>&1 | Out-Null
-    Start-Sleep -Seconds 2
-    try { $conn.Open(); $conn.Close(); Write-Host 'LocalDB оздравена.' -ForegroundColor Green; return $true }
-    catch { Write-Host 'LocalDB сè уште не одговара — API-то нема да работи. Провери рачно: sqllocaldb info MSSQLLocalDB' -ForegroundColor Red; return $false }
+# Локалниот API СЕКОГАШ работи врз ПРОД базата (appsettings.Development.json →
+# 127.0.0.1:14333 = SSH тунел до прод SQL, одлука 24.09.2026). Тунелот често
+# паѓа — крени го ако не стои.
+function Ensure-Tunnel {
+    if (Test-VtePort 14333) { return $true }
+    Write-Host 'Тунелот до прод базата не стои — го кревам…' -ForegroundColor Yellow
+    Get-Process ssh -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    Start-Process ssh -ArgumentList '-i', "$env:USERPROFILE\.ssh\vte_deploy", '-N',
+        '-o', 'ServerAliveInterval=30', '-o', 'ExitOnForwardFailure=yes',
+        '-L', '127.0.0.1:14333:localhost:1433', 'root@116.202.8.155' -WindowStyle Minimized
+    $rokT = (Get-Date).AddSeconds(20)
+    do { Start-Sleep -Seconds 2; $t = Test-VtePort 14333 } while (-not $t -and (Get-Date) -lt $rokT)
+    if ($t) { Write-Host 'Тунелот е горе.' -ForegroundColor Green }
+    else { Write-Host 'Тунелот НЕ се крена — провери интернет/SSH. API-то нема да работи без него.' -ForegroundColor Red }
+    return $t
 }
 
 # ---- API (само во режим „dvete") ----
 if ($Rezim -eq 'dvete') {
-    $null = Repair-LocalDb
+    $null = Ensure-Tunnel
     if (Test-VtePort 5300) {
         Write-Host 'API веќе работи на 5300 — не пуштам втор.' -ForegroundColor Yellow
     } else {
-        $cmdApi = "`$Host.UI.RawUI.WindowTitle = 'VTE API (5300) - lokalna baza'; Set-Location '{0}'; dotnet run --launch-profile http" -f $api
+        $cmdApi = "`$Host.UI.RawUI.WindowTitle = 'VTE API (5300) -> PROD baza'; Write-Host 'ВНИМАНИЕ: базата е ПРОД (преку тунел) — вистински податоци!' -ForegroundColor Red; Set-Location '{0}'; dotnet run --launch-profile http" -f $api
         Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $cmdApi
-        Write-Host 'API се пушта во свој прозорец (порта 5300, локална база)…' -ForegroundColor Cyan
+        Write-Host 'API се пушта во свој прозорец (порта 5300, база = ПРОД преку тунел)…' -ForegroundColor Cyan
     }
 }
 
@@ -106,11 +109,7 @@ while ((Get-Date) -lt $rok -and -not ($apiOk -and $feOk)) {
 }
 if ($apiOk -and $feOk) {
     Start-Process 'http://localhost:5174'
-    if ($Rezim -eq 'prod') {
-        Write-Host 'Отворено: http://localhost:5174  (податоците се од ПРОД!)' -ForegroundColor Yellow
-    } else {
-        Write-Host 'Сè работи — отворено: http://localhost:5174 (локална база: admin / ChangeMe!Now1)' -ForegroundColor Green
-    }
+    Write-Host 'Сè работи — отворено: http://localhost:5174 (ПРОД податоци, прод логин)' -ForegroundColor Green
 } else {
     if (-not $apiOk) { Write-Host 'API уште не одговара на 5300 — погледни во прозорецот „VTE API" за грешка.' -ForegroundColor Yellow }
     if (-not $feOk)  { Write-Host 'FE уште не одговара на 5174 — погледни во прозорецот „VTE FE" за грешка.'  -ForegroundColor Yellow }

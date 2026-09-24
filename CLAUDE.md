@@ -7,6 +7,13 @@
 > (`Repos\trunk\trunk`) — таму се бара легаси ground truth. Двете нови репоа ја
 > носат целата git историја. `deploy/build-release.ps1` го наоѓа FE билдот во
 > `..\FE\frontend-v2` автоматски.
+>
+> **Локалниот dev API работи врз ПРОД базата** (одлука 24.09.2026): нетрекуваниот
+> `backend-v2/src/VTE.Api/appsettings.Development.json` (gitignore:90) покажува на
+> 127.0.0.1:14333 = SSH тунел до прод SQL; `deploy/start-dev.ps1` сам го крева
+> тунелот. Локален логин = прод-креденцијали. ВНИМАВАЈ: сè што снимаш локално
+> оди во вистинската база, и auto-migrate при старт би ја мигрирал ПРОД шемата
+> ако BE носи понова миграција. LocalDB (мајски snapshot) повеќе не се користи.
 
 You're working on **VTE** — a multi-tenant SaaS rewrite (.NET 10 + Vue 3) of a legacy VB.NET WinForms vehicle-inspection system used in Macedonia. This repo holds the backend (`backend-v2/`) and SQL migration scripts (`migrate/`); the Vue frontend is in the sibling FE repo, and the legacy code (`VTE/`, `WinApp/`, etc.) stays in the old trunk repo for parity-checking.
 
