@@ -92,10 +92,14 @@ public class ReportsController : ControllerBase
         var vehIds = rels.Values.Where(r => r.VehicleId.HasValue).Select(r => r.VehicleId!.Value).Distinct().ToList();
         var vehicles = await _db.Vehicles.AsNoTracking()
             .Where(v => vehIds.Contains(v.Id))
-            .Select(v => new { v.Id, v.Plate, v.PaymentCategoryId })
+            .Select(v => new { v.Id, v.Plate, v.CategoryId })
             .ToDictionaryAsync(v => v.Id, ct);
-        var catNames = await _db.VehiclePaymentCategories.AsNoTracking()
-            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        // Легаси DolgIzvestaj ја прикажува РЕГИСТРАЦИОНАТА категорија
+        // (VehicleCategories.CategoryCode+Name → „M1-Патничко возило"), не
+        // платежната („Патнички возила") — ист код-име формат како возило-формата.
+        var catNames = await _db.VehicleCategories.AsNoTracking()
+            .ToDictionaryAsync(c => c.Id,
+                c => string.IsNullOrWhiteSpace(c.Code) ? c.Name : $"{c.Code.Trim()}-{c.Name}", ct);
 
         var rows = lines
             .GroupBy(x => new { x.Id, x.IssueDate, x.CustomerVehicleRelationId })
@@ -110,8 +114,8 @@ public class ReportsController : ControllerBase
                     if (rel.VehicleId.HasValue && vehicles.TryGetValue(rel.VehicleId.Value, out var v))
                     {
                         plate = v.Plate;
-                        if (v.PaymentCategoryId.HasValue)
-                            vehCat = catNames.GetValueOrDefault(v.PaymentCategoryId.Value);
+                        if (v.CategoryId.HasValue)
+                            vehCat = catNames.GetValueOrDefault(v.CategoryId.Value);
                     }
                 }
                 return new ReportRow(g.Key.Id, g.Key.IssueDate, payer, vehCat, plate, g.Sum(x => x.LineTotal));
