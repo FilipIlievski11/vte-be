@@ -90,6 +90,9 @@ cd /opt/vte
 docker compose up -d --build api
 docker compose ps --format '{{.Name}} {{.Status}}'
 "@
+# Скриптата на диск е со CRLF (Windows checkout) — remote bash мора да добие
+# чисти LF краеви, инаку: cd $'/opt/vte\r': No such file or directory.
+$remote = $remote -replace "`r", ''
 ssh -i $sshKey $server $remote
 if ($LASTEXITCODE -ne 0) { throw 'Далечинскиот деплој падна — прочитај ја грешката погоре (мрежен прекин кон docker registry се решава со повторно пуштање).' }
 
