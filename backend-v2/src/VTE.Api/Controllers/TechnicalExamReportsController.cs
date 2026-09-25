@@ -675,17 +675,22 @@ public class TechnicalExamReportsController : ControllerBase
         var validTill = dto.MadeDate.AddDays(validDays > 0 ? validDays : 365);
 
         // RegNumber = {org}-{nextSeq}/{year}; nextSeq continues the org's sequence.
+        // Легаси паралелно издава исти рег. броеви — провери и таму (како кај сметките).
         var prefix = $"{dto.OrganizationId}-";
         var lastRn = await _db.TechnicalExamReports.AsNoTracking()
             .Where(r => r.OrganizationId == dto.OrganizationId && r.RegNumber != null && r.RegNumber.StartsWith(prefix))
             .OrderByDescending(r => r.Id).Select(r => r.RegNumber).FirstOrDefaultAsync();
-        int seq = 1;
+        long seq = 1;
         if (lastRn != null)
         {
             int dash = lastRn.IndexOf('-'), slash = lastRn.IndexOf('/');
-            if (dash >= 0 && slash > dash && int.TryParse(lastRn.Substring(dash + 1, slash - dash - 1), out var n)) seq = n + 1;
+            if (dash >= 0 && slash > dash && long.TryParse(lastRn.Substring(dash + 1, slash - dash - 1), out var n)) seq = n + 1;
         }
-        var regNumber = $"{dto.OrganizationId}-{seq}/{DateTime.UtcNow.Year}";
+        var examYear = DateTime.UtcNow.Year;
+        var legacyMax = await VTE.Api.Services.LegacyNumbering.MaxExamSeqAsync(
+            _db, $"{prefix}%/{examYear}", _logger);
+        seq = Math.Max(seq, legacyMax + 1);
+        var regNumber = $"{dto.OrganizationId}-{seq}/{examYear}";
 
         int? firstCtrl = dto.FirstControllerLegacyId;
         if (firstCtrl is null && int.TryParse(_tenant.UserId, out var uid)) firstCtrl = uid;

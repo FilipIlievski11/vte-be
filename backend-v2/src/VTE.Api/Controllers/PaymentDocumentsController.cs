@@ -26,12 +26,15 @@ public class PaymentDocumentsController : ControllerBase
     private readonly VteDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly VTE.Api.Services.AuditLogger _audit;
+    private readonly ILogger<PaymentDocumentsController> _logger;
 
-    public PaymentDocumentsController(VteDbContext db, ITenantContext tenant, VTE.Api.Services.AuditLogger audit)
+    public PaymentDocumentsController(VteDbContext db, ITenantContext tenant, VTE.Api.Services.AuditLogger audit,
+        ILogger<PaymentDocumentsController> logger)
     {
         _db = db;
         _tenant = tenant;
         _audit = audit;
+        _logger = logger;
     }
 
     // ---- DTOs ----
@@ -428,12 +431,21 @@ public class PaymentDocumentsController : ControllerBase
                 return BadRequest(new { error = "Првата рата мора да биде поголема од 0 и помала од вкупниот износ." });
         }
 
+        // Легаси и v2 паралелно ЈА ДЕЛАТ нумерацијата, а огледалото се освежува
+        // само при синк — v2 MAX доцни со часови зад легаси (судир 05.08.2026:
+        // 01-37-48125/2026 во двата система). Легаси-максимумот се чита ПРЕД
+        // транзакцијата (linked-server read внатре во транзакција би се обидел
+        // да промовира во distributed transaction — MSDTC во docker нема).
+        var yearSuffix = $"/{now.Year}";
+        var prefixPart = string.IsNullOrWhiteSpace(type.Prefix) ? "" : type.Prefix + "-";
+        var legacyMax = await VTE.Api.Services.LegacyNumbering.MaxBillSeqAsync(
+            _db, $"{prefixPart}{organizationId}-%{yearSuffix}", _logger);
+
         // Serializable so two simultaneous bills can't draw the same sequence number.
         await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
         // Next sequence for (org, type, year). DocumentNumber format: [prefix-]org-seq/year —
         // seq is the segment between the last '-' and the '/'. TRY_CAST skips legacy oddballs.
-        var yearSuffix = $"/{now.Year}";
         var seqRow = await _db.Database.SqlQuery<long?>($@"
             SELECT MAX(TRY_CAST(LEFT(tail, CHARINDEX('/', tail) - 1) AS bigint)) AS [Value]
             FROM (
@@ -446,8 +458,7 @@ public class PaymentDocumentsController : ControllerBase
                   AND DocumentNumber LIKE {"%" + yearSuffix}
             ) t
             WHERE CHARINDEX('/', tail) > 1").FirstOrDefaultAsync();
-        var seq = (seqRow ?? 0) + 1;
-        var prefixPart = string.IsNullOrWhiteSpace(type.Prefix) ? "" : type.Prefix + "-";
+        var seq = Math.Max(seqRow ?? 0, legacyMax) + 1;
         var documentNumber = $"{prefixPart}{organizationId}-{seq}{yearSuffix}";
 
         var doc = new PaymentDocument

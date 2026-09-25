@@ -22,13 +22,16 @@ public class RequestsController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly IDebtService _debts;
     private readonly IConfiguration _config;
+    private readonly ILogger<RequestsController> _logger;
 
-    public RequestsController(VteDbContext db, ITenantContext tenant, IDebtService debts, IConfiguration config)
+    public RequestsController(VteDbContext db, ITenantContext tenant, IDebtService debts, IConfiguration config,
+        ILogger<RequestsController> logger)
     {
         _db = db;
         _tenant = tenant;
         _debts = debts;
         _config = config;
+        _logger = logger;
     }
 
     /// <summary>
@@ -477,18 +480,23 @@ public class RequestsController : ControllerBase
         var validTill = madeDate.AddDays(validDays > 0 ? validDays : 365);
 
         // RegNumber = {org}-{seq}/{year}; continues the org's sequence (mirror of
-        // TechnicalExamReportsController.Create:655-666 — same format, same sequence space).
+        // TechnicalExamReportsController.Create — same format, same sequence space).
+        // Легаси паралелно издава исти рег. броеви — провери и таму (како кај сметките).
         var prefix = $"{orgId}-";
         var lastRn = await _db.TechnicalExamReports.AsNoTracking()
             .Where(r => r.OrganizationId == orgId && r.RegNumber != null && r.RegNumber.StartsWith(prefix))
             .OrderByDescending(r => r.Id).Select(r => r.RegNumber).FirstOrDefaultAsync();
-        int seq = 1;
+        long seq = 1;
         if (lastRn != null)
         {
             int dash = lastRn.IndexOf('-'), slash = lastRn.IndexOf('/');
-            if (dash >= 0 && slash > dash && int.TryParse(lastRn.Substring(dash + 1, slash - dash - 1), out var n)) seq = n + 1;
+            if (dash >= 0 && slash > dash && long.TryParse(lastRn.Substring(dash + 1, slash - dash - 1), out var n)) seq = n + 1;
         }
-        var regNumber = $"{orgId}-{seq}/{DateTime.UtcNow.Year}";
+        var examYear = DateTime.UtcNow.Year;
+        var legacyMax = await VTE.Api.Services.LegacyNumbering.MaxExamSeqAsync(
+            _db, $"{prefix}%/{examYear}", _logger);
+        seq = Math.Max(seq, legacyMax + 1);
+        var regNumber = $"{orgId}-{seq}/{examYear}";
 
         var exam = new TechnicalExamReport
         {
